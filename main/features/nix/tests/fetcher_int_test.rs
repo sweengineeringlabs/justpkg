@@ -313,7 +313,9 @@ fn test_fetch_to_cas_propagates_http_error() {
     // This test would fail if fetch_to_cas ignored the error or returned Ok.
     let cas = MemCas::new();
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &FailingClient };
+    let fetcher = NixFetcher {
+        http: &FailingClient,
+    };
 
     let result = fetcher.fetch_to_cas(&lock, &cas);
 
