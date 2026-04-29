@@ -11,7 +11,7 @@ fn write_nar_str(buf: &mut Vec<u8>, s: &str) {
     buf.extend(std::iter::repeat(0u8).take(pad));
 }
 
-/// Builds a directory NAR with one entry whose name is `entry_name`.
+/// Builds a directory NAR containing one regular file entry named `entry_name`.
 fn build_dir_nar_with_entry(entry_name: &str, content: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
     write_nar_str(&mut buf, "nix-archive-1");
@@ -32,11 +32,9 @@ fn build_dir_nar_with_entry(entry_name: &str, content: &[u8]) -> Vec<u8> {
     buf.extend_from_slice(content);
     let pad = (8 - (content.len() % 8)) % 8;
     buf.extend(std::iter::repeat(0u8).take(pad));
-    write_nar_str(&mut buf, ")"); // [A] read_regular exits its loop
-    write_nar_str(&mut buf, ")"); // [B] inner read_nar_node closes
-    write_nar_str(&mut buf, ")"); // [C] read_directory entry group closes
-    write_nar_str(&mut buf, ")"); // [D] read_directory loop exits
-    write_nar_str(&mut buf, ")"); // [E] outer read_nar_node closes
+    write_nar_str(&mut buf, ")"); // close regular node
+    write_nar_str(&mut buf, ")"); // close entry group
+    write_nar_str(&mut buf, ")"); // close directory node
     buf
 }
 

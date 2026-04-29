@@ -31,8 +31,7 @@ fn build_single_file_nar(content: &[u8]) -> Vec<u8> {
     buf.extend_from_slice(content);
     let pad = (8 - (content.len() % 8)) % 8;
     buf.extend(std::iter::repeat(0u8).take(pad));
-    write_nar_str(&mut buf, ")"); // read_regular exits
-    write_nar_str(&mut buf, ")"); // read_nar_node closes
+    write_nar_str(&mut buf, ")"); // close node
     buf
 }
 

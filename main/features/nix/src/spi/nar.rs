@@ -55,7 +55,7 @@ fn read_nar_node<R: Read>(r: &mut R, current: &Path, base: &Path) -> Result<(), 
         }
     }
 
-    expect_str(r, ")")?;
+    // Each handler above consumes its own closing ")".  No second read needed.
     Ok(())
 }
 
@@ -161,6 +161,7 @@ fn read_symlink<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
             .map_err(|e| NixFetchError::NarExtract(format!("write symlink stub: {e}")))?;
     }
 
+    expect_str(r, ")")?;
     Ok(())
 }
 
