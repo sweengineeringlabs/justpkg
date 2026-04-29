@@ -23,6 +23,10 @@ thiserror    = { workspace = true }
 tempfile = { workspace = true }
 
 [[test]]
+name = "error_int_test"
+path = "tests/error_int_test.rs"
+
+[[test]]
 name = "manifest_int_test"
 path = "tests/manifest_int_test.rs"
 
