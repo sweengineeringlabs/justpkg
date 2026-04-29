@@ -975,6 +975,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "swe_justpkg_vminit"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "swe_justpkg_nix",
+ "swe_justpkg_pkg",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"

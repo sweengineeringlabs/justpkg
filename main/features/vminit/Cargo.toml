@@ -1,0 +1,39 @@
+[package]
+name        = "swe_justpkg_vminit"
+version     = "0.1.0"
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+authors.workspace      = true
+rust-version.workspace = true
+description = "justpkg vminit integration — package name → NAR hash manifest + installer"
+
+[lib]
+name = "swe_justpkg_vminit"
+path = "src/lib.rs"
+
+[dependencies]
+justpkg-pkg = { workspace = true }
+justpkg-nix  = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[test]]
+name = "manifest_int_test"
+path = "tests/manifest_int_test.rs"
+
+[[test]]
+name = "manifest_security_test"
+path = "tests/manifest_security_test.rs"
+
+[[test]]
+name = "installer_int_test"
+path = "tests/installer_int_test.rs"
+
+[[test]]
+name = "installer_security_test"
+path = "tests/installer_security_test.rs"

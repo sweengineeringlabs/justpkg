@@ -4,6 +4,7 @@ members = [
     "main/features/pkg",
     "main/features/nix",
     "main/features/cli",
+    "main/features/vminit",
 ]
 
 [workspace.package]
