@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use cas::FsCas;
+use justpkg_config::load as load_config;
 use justpkg_nix::{FlakeLock, NixFetcher};
 use justpkg_pkg::UreqClient;
 
@@ -38,6 +39,8 @@ enum Command {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let config = load_config();
+    let cache_base = config.nix.cache_base;
 
     match cli.command {
         Command::Build {
@@ -48,7 +51,7 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&dest_dir)
                 .with_context(|| format!("create dest dir {:?}", dest_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http };
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base };
             fetcher
                 .build(&lock, &dest_dir)
                 .with_context(|| "NAR fetch/extract failed")?;
@@ -64,7 +67,7 @@ fn main() -> Result<()> {
             let cas =
                 FsCas::new(&cache_dir).with_context(|| format!("open CAS at {:?}", cache_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http };
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base };
             let map = fetcher
                 .fetch_to_cas(&lock, &cas)
                 .with_context(|| "NAR fetch to CAS failed")?;
@@ -87,7 +90,7 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&dest_dir)
                 .with_context(|| format!("create dest dir {:?}", dest_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http };
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base };
             fetcher
                 .extract_from_cas(&lock, &cas, &dest_dir)
                 .with_context(|| "NAR extract from CAS failed")?;

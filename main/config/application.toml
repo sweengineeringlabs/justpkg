@@ -1,0 +1,10 @@
+# justpkg application configuration
+# Place at $XDG_CONFIG_HOME/justpkg/application.toml  (default: ~/.config/justpkg/application.toml)
+# or at any $XDG_CONFIG_DIRS entry (default: /etc/xdg/justpkg/application.toml).
+# All keys are optional; omitted keys use the values shown here.
+
+[nix]
+# Nix binary cache base URL. justpkg appends /<hash>.narinfo and /<nar-url>.
+# Set to a private mirror (e.g. https://cache.example.com) to avoid hitting
+# the public cache.nixos.org, or to use a local cache proxy.
+cache_base = "https://cache.nixos.org"

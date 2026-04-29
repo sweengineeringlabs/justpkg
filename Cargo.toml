@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "main/features/config",
     "main/features/pkg",
     "main/features/nix",
     "main/features/cli",
@@ -17,8 +18,9 @@ rust-version = "1.75"
 
 [workspace.dependencies]
 # ── Internal ──────────────────────────────────────────────────────────────
-justpkg-pkg = { path = "main/features/pkg", package = "swe_justpkg_pkg" }
-justpkg-nix  = { path = "main/features/nix",  package = "swe_justpkg_nix"  }
+justpkg-config = { path = "main/features/config", package = "swe_justpkg_config" }
+justpkg-pkg    = { path = "main/features/pkg",    package = "swe_justpkg_pkg"    }
+justpkg-nix    = { path = "main/features/nix",    package = "swe_justpkg_nix"    }
 
 # ── Cross-repo sibling — justcas ──────────────────────────────────────────
 # Content-addressed storage primitive. justpkg stores every fetched blob

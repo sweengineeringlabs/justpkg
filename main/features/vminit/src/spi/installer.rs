@@ -6,7 +6,7 @@
 /// 3. Delegate to `NixFetcher::build` — maps errors to [`VminitInstallError::FetchFailed`].
 use std::path::Path;
 
-use justpkg_nix::{FlakeLock, NixFetcher};
+use justpkg_nix::{FlakeLock, NixFetcher, DEFAULT_CACHE_BASE};
 use justpkg_pkg::HttpClient;
 
 use crate::api::error::VminitInstallError;
@@ -28,7 +28,7 @@ pub fn install_packages(
                 })?;
 
         let lock = build_synthetic_lock(name, sri);
-        let fetcher = NixFetcher { http };
+        let fetcher = NixFetcher { http, cache_base: DEFAULT_CACHE_BASE };
         fetcher
             .build(&lock, dest_dir)
             .map_err(|source| VminitInstallError::FetchFailed {

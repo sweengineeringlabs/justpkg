@@ -14,9 +14,10 @@ name = "justpkg"
 path = "src/main.rs"
 
 [dependencies]
-justpkg-pkg = { workspace = true }
-justpkg-nix  = { workspace = true }
-cas  = { workspace = true }
+justpkg-pkg    = { workspace = true }
+justpkg-nix    = { workspace = true }
+justpkg-config = { workspace = true }
+cas        = { workspace = true }
 anyhow     = { workspace = true }
 clap       = { workspace = true }
 serde_json = { workspace = true }

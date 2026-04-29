@@ -14,10 +14,12 @@ use crate::api::narinfo::{Compression, NarInfo};
 use crate::spi::nar::extract_nar;
 use crate::spi::nix_hash;
 
-const CACHE_BASE: &str = "https://cache.nixos.org";
-
 pub struct NixFetcher<'a> {
     pub http: &'a dyn HttpClient,
+    /// Nix binary cache base URL (e.g. `"https://cache.nixos.org"`).
+    /// Loaded from `application.toml` by the caller; use
+    /// `swe_justpkg_nix::DEFAULT_CACHE_BASE` when no config is available.
+    pub cache_base: &'a str,
 }
 
 impl<'a> NixFetcher<'a> {
@@ -49,7 +51,7 @@ impl<'a> NixFetcher<'a> {
             let sri = &node.locked.nar_hash;
             eprintln!("  fetch {name}");
             let narinfo = self.fetch_narinfo(sri)?;
-            let nar_url = format!("{CACHE_BASE}/{}", narinfo.url);
+            let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
 
             let mut compressed_bytes = Vec::new();
             self.http.get_stream(&nar_url, &mut compressed_bytes)?;
@@ -130,7 +132,7 @@ impl<'a> NixFetcher<'a> {
     }
 
     fn fetch_narinfo_by_store_hash(&self, store_hash: &str) -> Result<NarInfo, NixFetchError> {
-        let narinfo_url = format!("{CACHE_BASE}/{store_hash}.narinfo");
+        let narinfo_url = format!("{}/{store_hash}.narinfo", self.cache_base);
         let narinfo_bytes = self.http.get_bytes(&narinfo_url)?;
         let narinfo_text =
             String::from_utf8(narinfo_bytes).map_err(|e| NixFetchError::NarInfoParse {
@@ -180,7 +182,7 @@ impl<'a> NixFetcher<'a> {
         let extract_path = dest_dir.join("nix").join("store").join(store_basename);
 
         if !extract_path.exists() {
-            let nar_url = format!("{CACHE_BASE}/{}", narinfo.url);
+            let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
             let mut compressed = Vec::new();
             self.http.get_stream(&nar_url, &mut compressed)?;
             let uncompressed =
@@ -216,7 +218,7 @@ impl<'a> NixFetcher<'a> {
         // the source fingerprint) — this is the 32-char prefix in the .narinfo URL.
         // Using sri_to_hex directly as the URL was wrong (issue #80).
         let store_hash = nix_hash::nar_hash_to_store_path_hash(sri)?;
-        let narinfo_url = format!("{CACHE_BASE}/{store_hash}.narinfo");
+        let narinfo_url = format!("{}/{store_hash}.narinfo", self.cache_base);
         let narinfo_bytes = self.http.get_bytes(&narinfo_url)?;
         let narinfo_text =
             String::from_utf8(narinfo_bytes).map_err(|e| NixFetchError::NarInfoParse {
@@ -337,7 +339,7 @@ mod tests_build_store_path {
 
     #[test]
     fn test_build_store_path_rejects_path_without_nix_store_prefix() {
-        let fetcher = NixFetcher { http: &PanicClient };
+        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org" };
         let err = fetcher
             .build_store_path("/usr/local/abc123-curl-8.0", std::path::Path::new("/dest"))
             .unwrap_err();
@@ -349,7 +351,7 @@ mod tests_build_store_path {
 
     #[test]
     fn test_build_store_path_rejects_path_without_hash_separator() {
-        let fetcher = NixFetcher { http: &PanicClient };
+        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org" };
         let err = fetcher
             .build_store_path("/nix/store/nohyphennamehere", std::path::Path::new("/dest"))
             .unwrap_err();
