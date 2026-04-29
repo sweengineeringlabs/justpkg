@@ -64,6 +64,102 @@ pub fn sri_to_hex(sri: &str) -> Result<String, NixFetchError> {
     Ok(hex::encode(bytes))
 }
 
+/// Encode raw bytes as a Nix base-32 string (custom Nix alphabet).
+///
+/// This is the inverse of `nix_base32_decode`. Ported from Nix C++ `printHash32`.
+pub fn nix_base32_encode(bytes: &[u8]) -> String {
+    let out_len = (bytes.len() * 8 + 4) / 5;
+    let mut out = Vec::with_capacity(out_len);
+    for n in (0..out_len).rev() {
+        let b = n * 5;
+        let i = b / 8;
+        let j = b % 8;
+        let c0 = bytes[i] as u32;
+        let c1 = if i + 1 < bytes.len() { bytes[i + 1] as u32 } else { 0 };
+        let c = ((c0 >> j) | (c1 << (8 - j))) & 0x1f;
+        out.push(NIX_BASE32_CHARS[c as usize]);
+    }
+    // SAFETY: NIX_BASE32_CHARS is ASCII-only.
+    String::from_utf8(out).expect("nix_base32_encode produced non-UTF-8")
+}
+
+/// Derive the Nix store path hash component from a `flake.lock` SRI narHash.
+///
+/// Nix derives a fixed-output derivation store path for recursive ("source") mode via:
+///   fingerprint = "source:sha256:<hex(narHash_bytes)>:/nix/store:source"
+///   store_hash  = nix_base32( sha256(fingerprint)[0..20] )
+///
+/// This is the 32-character prefix in `<store_hash>.narinfo` on cache.nixos.org.
+pub fn nar_hash_to_store_path_hash(sri: &str) -> Result<String, NixFetchError> {
+    let hash_hex = sri_to_hex(sri)?;
+    let fingerprint = format!("source:sha256:{}:/nix/store:source", hash_hex);
+    let full_hash = {
+        use sha2::Digest;
+        sha2::Sha256::digest(fingerprint.as_bytes())
+    };
+    Ok(nix_base32_encode(&full_hash[..20]))
+}
+
+#[cfg(test)]
+mod tests_encode {
+    use super::*;
+
+    #[test]
+    fn test_nix_base32_encode_all_zeros_produces_all_zero_chars() {
+        let result = nix_base32_encode(&[0u8; 20]);
+        assert_eq!(result.len(), 32, "20 bytes must produce 32 Nix base-32 chars");
+        assert!(
+            result.chars().all(|c| c == '0'),
+            "all-zero bytes must encode to all '0' chars, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_nix_base32_encode_all_ones_produces_all_z_chars() {
+        let result = nix_base32_encode(&[0xffu8; 20]);
+        assert_eq!(result.len(), 32, "20 bytes must produce 32 Nix base-32 chars");
+        assert!(
+            result.chars().all(|c| c == 'z'),
+            "all-0xff bytes must encode to all 'z' chars, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_nix_base32_encode_decode_round_trip() {
+        let original = "0123456789abcdfghijklmnpqrsvwxyz";
+        let decoded = nix_base32_decode(original).expect("decode failed");
+        let re_encoded = nix_base32_encode(&decoded);
+        assert_eq!(
+            re_encoded, original,
+            "encode(decode(s)) must equal s for Nix base-32"
+        );
+    }
+
+    #[test]
+    fn test_nar_hash_to_store_path_hash_output_is_32_valid_nix_base32_chars() {
+        // sha256 of empty string in SRI format
+        let sri = "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
+        let result = nar_hash_to_store_path_hash(sri)
+            .expect("must succeed for valid SRI");
+        assert_eq!(result.len(), 32, "store path hash must be 32 chars");
+        let valid_chars: &str = "0123456789abcdfghijklmnpqrsvwxyz";
+        assert!(
+            result.chars().all(|c| valid_chars.contains(c)),
+            "store path hash must use only Nix base-32 alphabet: {result}"
+        );
+    }
+
+    #[test]
+    fn test_nar_hash_to_store_path_hash_rejects_invalid_sri() {
+        let err = nar_hash_to_store_path_hash("md5-not-valid")
+            .expect_err("must fail for non-sha256 SRI");
+        assert!(
+            matches!(err, NixFetchError::InvalidNixHash(_)),
+            "must return InvalidNixHash error, got: {err:?}"
+        );
+    }
+}
+
 fn base64_decode(s: &str) -> Option<Vec<u8>> {
     let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = Vec::new();

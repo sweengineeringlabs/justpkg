@@ -88,7 +88,7 @@ fn test_build_fails_on_unreachable_cache() {
 }
 
 #[test]
-#[ignore = "requires network — known to fail until narinfo URL derivation is fixed (issue #80)"]
+#[ignore = "requires network"]
 fn test_build_real_flake_lock_fetches_nar() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let dir = tempfile::tempdir().unwrap();
@@ -221,11 +221,16 @@ struct NoneCompressionStubClient {
 
 impl NoneCompressionStubClient {
     fn new(nar_bytes: Vec<u8>) -> Self {
+        // extract_from_cas now derives the CAS key from narinfo.FileHash instead of
+        // re-downloading the bytes. Use the real SHA-256 so CAS lookups match.
+        let file_hash_hex = cas::Digest::from_bytes(cas::Algorithm::Sha256, &nar_bytes)
+            .hex()
+            .to_string();
         let narinfo_text = format!(
             "StorePath: /nix/store/stub-pkg\n\
              URL: nar/stub.nar\n\
              Compression: none\n\
-             FileHash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n\
+             FileHash: sha256:{file_hash_hex}\n\
              FileSize: {sz}\n\
              NarHash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n\
              NarSize: {sz}\n\

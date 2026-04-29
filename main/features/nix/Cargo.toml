@@ -21,6 +21,7 @@ tar       = { workspace = true }
 xz2       = { workspace = true }
 zstd      = { workspace = true }
 flate2    = { workspace = true }
+bzip2     = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

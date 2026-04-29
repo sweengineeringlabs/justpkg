@@ -79,21 +79,25 @@ impl<'a> NixFetcher<'a> {
             eprintln!("  extract {name}");
             let narinfo = self.fetch_narinfo(sri)?;
 
-            // Re-derive the CAS key: SHA-256 of the compressed NAR.
-            // `fetch_to_cas` called `cas.put(&compressed_bytes)` which returns
-            // `Digest::from_bytes(Sha256, compressed_bytes)`.  We reproduce
-            // that digest here so we can look up the same blob without storing
-            // the digest map on disk between the two commands.
-            //
-            // narinfo.file_hash is the Nix-encoded SHA-256 of the compressed
-            // file, but its encoding (base-32 or hex) is implementation-defined.
-            // Computing the digest from the raw bytes is the safe, encoding-
-            // agnostic approach — and matches what `cas.put` does internally.
-            let nar_url = format!("{CACHE_BASE}/{}", narinfo.url);
-            let mut compressed_bytes = Vec::new();
-            self.http.get_stream(&nar_url, &mut compressed_bytes)?;
+            // Derive the CAS lookup key from narinfo.file_hash (Nix base-32 or
+            // hex SHA-256 of the compressed file) — no need to re-download the
+            // blob just to reconstruct the digest.
+            let file_hash_bytes = if narinfo.file_hash.len() == 52 {
+                nix_hash::nix_base32_decode(&narinfo.file_hash).map_err(|e| {
+                    NixFetchError::NarExtract(format!("invalid FileHash base-32: {e}"))
+                })?
+            } else if narinfo.file_hash.len() == 64 {
+                hex::decode(&narinfo.file_hash).map_err(|e| {
+                    NixFetchError::NarExtract(format!("invalid FileHash hex: {e}"))
+                })?
+            } else {
+                return Err(NixFetchError::NarExtract(format!(
+                    "unexpected FileHash length {} for {name}: expected 52 (Nix base-32) or 64 (hex)",
+                    narinfo.file_hash.len()
+                )));
+            };
 
-            let digest = Digest::from_bytes(Algorithm::Sha256, &compressed_bytes);
+            let digest = Digest::from_hash_output(Algorithm::Sha256, &file_hash_bytes);
             let stored = cas
                 .get(&digest)
                 .map_err(|e| NixFetchError::NarExtract(e.to_string()))?;
@@ -107,15 +111,18 @@ impl<'a> NixFetcher<'a> {
     }
 
     fn fetch_narinfo(&self, sri: &str) -> Result<NarInfo, NixFetchError> {
-        let hex = nix_hash::sri_to_hex(sri)?;
-        let narinfo_url = format!("{CACHE_BASE}/{hex}.narinfo");
+        // Derive the Nix store path hash (Nix base-32 of truncated SHA-256 of
+        // the source fingerprint) — this is the 32-char prefix in the .narinfo URL.
+        // Using sri_to_hex directly as the URL was wrong (issue #80).
+        let store_hash = nix_hash::nar_hash_to_store_path_hash(sri)?;
+        let narinfo_url = format!("{CACHE_BASE}/{store_hash}.narinfo");
         let narinfo_bytes = self.http.get_bytes(&narinfo_url)?;
         let narinfo_text =
             String::from_utf8(narinfo_bytes).map_err(|e| NixFetchError::NarInfoParse {
-                hash: hex.clone(),
+                hash: store_hash.clone(),
                 message: e.to_string(),
             })?;
-        NarInfo::parse(&hex, &narinfo_text)
+        NarInfo::parse(&store_hash, &narinfo_text)
     }
 
     fn fetch_nar_by_sri(&self, sri: &str, dest_dir: &Path) -> Result<(), NixFetchError> {
@@ -147,7 +154,7 @@ fn decompress(compression: &Compression, data: &[u8]) -> Result<Vec<u8>, String>
         }
         Compression::Bzip2 => {
             let mut out = Vec::new();
-            let mut decoder = flate2::read::GzDecoder::new(data);
+            let mut decoder = bzip2::read::BzDecoder::new(data);
             std::io::copy(&mut decoder, &mut out).map_err(|e| e.to_string())?;
             Ok(out)
         }
