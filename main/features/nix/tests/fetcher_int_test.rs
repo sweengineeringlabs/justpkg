@@ -206,6 +206,106 @@ fn test_build_zstd_nar_decompresses_and_extracts_correctly() {
     );
 }
 
+// ── Bzip2 decompression integration test ─────────────────────────────────────
+
+struct Bzip2MockClient {
+    narinfo_text: String,
+    nar_bytes: Vec<u8>,
+    nar_url_suffix: String,
+}
+
+impl Bzip2MockClient {
+    fn new(file_content: &[u8]) -> Self {
+        let raw_nar = build_single_file_nar(file_content);
+
+        let mut compressed = Vec::new();
+        let mut encoder =
+            bzip2::write::BzEncoder::new(&mut compressed, bzip2::Compression::best());
+        std::io::copy(&mut std::io::Cursor::new(&raw_nar), &mut encoder)
+            .expect("bzip2 encode failed");
+        encoder.finish().expect("bzip2 finish failed");
+
+        let nar_url_suffix = "nar/test.nar.bz2".to_string();
+
+        let narinfo_text = format!(
+            "StorePath: /nix/store/test-pkg\n\
+             URL: {nar_url_suffix}\n\
+             Compression: bzip2\n\
+             FileHash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n\
+             FileSize: {file_size}\n\
+             NarHash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n\
+             NarSize: {nar_size}\n\
+             References:\n",
+            file_size = compressed.len(),
+            nar_size = raw_nar.len(),
+        );
+
+        Bzip2MockClient {
+            narinfo_text,
+            nar_bytes: compressed,
+            nar_url_suffix,
+        }
+    }
+}
+
+impl justpkg_pkg::HttpClient for Bzip2MockClient {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+        if url.ends_with(".narinfo") {
+            return Ok(self.narinfo_text.as_bytes().to_vec());
+        }
+        Err(justpkg_pkg::JustpkgError::Http {
+            url: url.to_string(),
+            status: 404,
+        })
+    }
+
+    fn get_stream(
+        &self,
+        url: &str,
+        writer: &mut dyn std::io::Write,
+    ) -> Result<u64, justpkg_pkg::JustpkgError> {
+        if url.ends_with(&self.nar_url_suffix) {
+            writer
+                .write_all(&self.nar_bytes)
+                .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                    url: url.to_string(),
+                    status: 0,
+                })?;
+            return Ok(self.nar_bytes.len() as u64);
+        }
+        Err(justpkg_pkg::JustpkgError::Http {
+            url: url.to_string(),
+            status: 404,
+        })
+    }
+}
+
+#[test]
+fn test_build_bzip2_nar_decompresses_and_extracts_correctly() {
+    // @covers: decompress::Bzip2 arm (fetcher.rs)
+    //
+    // Regression guard: a previous bug used GzDecoder for Bzip2 compression,
+    // which would silently produce a decompression error or wrong bytes.
+    // This test would fail if BzDecoder were replaced with any other decoder.
+    let parent = tempfile::tempdir().unwrap();
+    let dest = parent.path().join("output");
+
+    let expected_content = b"bzip2 test payload";
+    let client = Bzip2MockClient::new(expected_content);
+    let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
+    let fetcher = NixFetcher { http: &client };
+
+    fetcher
+        .build(&lock, &dest)
+        .expect("bzip2-compressed NAR fetch and extract must succeed");
+
+    let actual = std::fs::read(&dest).expect("extracted file must exist at dest path");
+    assert_eq!(
+        actual, expected_content,
+        "decompressed+extracted content must match original bzip2 payload"
+    );
+}
+
 // ── HTTP stub for fetch_to_cas / extract_from_cas tests ──────────────────────
 
 /// Stub that serves a canned narinfo with `Compression: none` and returns the
