@@ -21,12 +21,15 @@ pub struct NixFetcher<'a> {
 }
 
 impl<'a> NixFetcher<'a> {
-    /// Fetch and extract all locked nodes from a `flake.lock` into `dest_dir`.
+    /// Fetch and extract all locked nodes from a `flake.lock` into `dest_dir`,
+    /// recursively resolving transitive dependencies (the closure).
     pub fn build(&self, lock: &FlakeLock, dest_dir: &Path) -> Result<(), NixFetchError> {
+        let mut visited = std::collections::HashSet::new();
         for (name, node) in lock.locked_nodes() {
             let sri = &node.locked.nar_hash;
             eprintln!("  fetch {name}");
-            self.fetch_nar_by_sri(sri, dest_dir)?;
+            let store_hash = nix_hash::nar_hash_to_store_path_hash(sri)?;
+            self.build_with_closure(&store_hash, dest_dir, &mut visited)?;
         }
         Ok(())
     }
@@ -60,8 +63,8 @@ impl<'a> NixFetcher<'a> {
         Ok(result)
     }
 
-    /// Read each locked node's compressed NAR from `cas`, decompress, and
-    /// extract to `dest_dir`.
+    /// Read each locked node's compressed NAR from `cas`, decompress, verify
+    /// integrity, and extract to the Nix store path layout under `dest_dir`.
     ///
     /// The `cas` must already contain all blobs populated by `fetch_to_cas`.
     /// Each blob is identified by the SHA-256 digest of its compressed bytes —
@@ -105,8 +108,86 @@ impl<'a> NixFetcher<'a> {
             let uncompressed =
                 decompress(&narinfo.compression, &stored).map_err(NixFetchError::NarExtract)?;
 
-            extract_nar(Cursor::new(uncompressed), dest_dir)?;
+            // Issue #3: verify NAR integrity before extraction
+            verify_nar_hash(&uncompressed, &narinfo.nar_hash)?;
+
+            let store_basename = narinfo
+                .store_path
+                .strip_prefix("/nix/store/")
+                .unwrap_or(&narinfo.store_path);
+            let extract_path = dest_dir.join("nix").join("store").join(store_basename);
+            // Create the parent so extract_nar can write the store node.
+            // The NAR extractor handles creation of the node itself.
+            let parent = extract_path.parent().ok_or_else(|| {
+                NixFetchError::NarExtract("store path has no parent".to_string())
+            })?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                NixFetchError::NarExtract(format!("failed to create store parent dir: {e}"))
+            })?;
+            extract_nar(Cursor::new(uncompressed), &extract_path)?;
         }
+        Ok(())
+    }
+
+    fn fetch_narinfo_by_store_hash(&self, store_hash: &str) -> Result<NarInfo, NixFetchError> {
+        let narinfo_url = format!("{CACHE_BASE}/{store_hash}.narinfo");
+        let narinfo_bytes = self.http.get_bytes(&narinfo_url)?;
+        let narinfo_text =
+            String::from_utf8(narinfo_bytes).map_err(|e| NixFetchError::NarInfoParse {
+                hash: store_hash.to_string(),
+                message: e.to_string(),
+            })?;
+        NarInfo::parse(store_hash, &narinfo_text)
+    }
+
+    fn build_with_closure(
+        &self,
+        store_hash: &str,
+        dest_dir: &Path,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Result<(), NixFetchError> {
+        if !visited.insert(store_hash.to_string()) {
+            return Ok(()); // already fetched — handles cycles and shared deps
+        }
+
+        let narinfo = self.fetch_narinfo_by_store_hash(store_hash)?;
+
+        // Extract to Nix store path layout: <dest_dir>/nix/store/<basename>
+        let store_basename = narinfo
+            .store_path
+            .strip_prefix("/nix/store/")
+            .unwrap_or(&narinfo.store_path);
+        let extract_path = dest_dir.join("nix").join("store").join(store_basename);
+
+        if !extract_path.exists() {
+            let nar_url = format!("{CACHE_BASE}/{}", narinfo.url);
+            let mut compressed = Vec::new();
+            self.http.get_stream(&nar_url, &mut compressed)?;
+            let uncompressed =
+                decompress(&narinfo.compression, &compressed).map_err(NixFetchError::NarExtract)?;
+            verify_nar_hash(&uncompressed, &narinfo.nar_hash)?;
+
+            // Create the parent so extract_nar can write the store node.
+            // The NAR extractor handles creation of the node itself.
+            let parent = extract_path.parent().ok_or_else(|| {
+                NixFetchError::NarExtract("store path has no parent".to_string())
+            })?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                NixFetchError::NarExtract(format!("failed to create store parent dir: {e}"))
+            })?;
+            extract_nar(std::io::Cursor::new(uncompressed), &extract_path)?;
+        }
+
+        // Recursively fetch all transitive dependencies
+        for dep_path in &narinfo.references {
+            if let Some(basename) = dep_path.strip_prefix("/nix/store/") {
+                // Store hash is the Nix-base32 prefix before the first hyphen
+                if let Some((dep_hash, _)) = basename.split_once('-') {
+                    self.build_with_closure(dep_hash, dest_dir, visited)?;
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -124,24 +205,24 @@ impl<'a> NixFetcher<'a> {
             })?;
         NarInfo::parse(&store_hash, &narinfo_text)
     }
+}
 
-    fn fetch_nar_by_sri(&self, sri: &str, dest_dir: &Path) -> Result<(), NixFetchError> {
-        let narinfo = self.fetch_narinfo(sri)?;
-        let nar_url = format!("{CACHE_BASE}/{}", narinfo.url);
-
-        // Fetch compressed NAR (cache by FileHash)
-        let mut nar_bytes = Vec::new();
-        self.http.get_stream(&nar_url, &mut nar_bytes)?;
-
-        // Decompress
-        let uncompressed =
-            decompress(&narinfo.compression, &nar_bytes).map_err(NixFetchError::NarExtract)?;
-
-        // Extract
-        extract_nar(std::io::Cursor::new(uncompressed), dest_dir)?;
-
-        Ok(())
+fn verify_nar_hash(nar_bytes: &[u8], nar_hash_nix_base32: &str) -> Result<(), NixFetchError> {
+    let expected = nix_hash::nix_base32_decode(nar_hash_nix_base32).map_err(|e| {
+        NixFetchError::NarExtract(format!("invalid NarHash encoding: {e}"))
+    })?;
+    let actual = {
+        use sha2::Digest;
+        sha2::Sha256::digest(nar_bytes).to_vec()
+    };
+    if actual != expected {
+        return Err(NixFetchError::NarExtract(format!(
+            "NAR integrity check failed: expected {} but got {}",
+            hex::encode(&expected),
+            hex::encode(&actual),
+        )));
     }
+    Ok(())
 }
 
 fn decompress(compression: &Compression, data: &[u8]) -> Result<Vec<u8>, String> {
@@ -165,5 +246,56 @@ fn decompress(compression: &Compression, data: &[u8]) -> Result<Vec<u8>, String>
             std::io::copy(&mut decoder, &mut out).map_err(|e| e.to_string())?;
             Ok(out)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_verify_nar_hash_accepts_matching_hash() {
+        // Verifies that verify_nar_hash returns Ok when sha256(bytes) matches the
+        // Nix base-32 encoded hash. Would fail if the SHA-256 computation or
+        // Nix base-32 decode is wrong.
+        let data = b"test NAR bytes";
+        let hash_bytes = {
+            use sha2::Digest;
+            sha2::Sha256::digest(data).to_vec()
+        };
+        let encoded = nix_hash::nix_base32_encode(&hash_bytes);
+        let result = verify_nar_hash(data, &encoded);
+        assert!(
+            result.is_ok(),
+            "verify_nar_hash must return Ok when hash matches, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_verify_nar_hash_rejects_mismatched_hash() {
+        // Verifies that verify_nar_hash returns NarExtract(…) when the bytes don't
+        // match the declared hash — the core integrity check.
+        let data = b"real NAR bytes";
+        let wrong_data = b"different bytes";
+        let hash_bytes = {
+            use sha2::Digest;
+            sha2::Sha256::digest(wrong_data).to_vec()
+        };
+        let encoded = nix_hash::nix_base32_encode(&hash_bytes);
+        let result = verify_nar_hash(data, &encoded);
+        assert!(
+            matches!(result, Err(NixFetchError::NarExtract(_))),
+            "verify_nar_hash must return NarExtract when bytes do not match hash"
+        );
+    }
+
+    #[test]
+    fn test_verify_nar_hash_rejects_invalid_base32_encoding() {
+        // Verifies that malformed hash strings produce an error rather than panicking.
+        let result = verify_nar_hash(b"data", "not-valid-base32!!!");
+        assert!(
+            matches!(result, Err(NixFetchError::NarExtract(_))),
+            "verify_nar_hash must return NarExtract for invalid base-32 input"
+        );
     }
 }
