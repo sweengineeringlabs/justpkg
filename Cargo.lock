@@ -979,26 +979,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "swe_fs_ext4_ext4"
+version = "0.1.0"
+dependencies = [
+ "swe_fs_ext4_spec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "swe_fs_ext4_spec"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "swe_justcas_cas"
 version = "0.1.0"
 dependencies = [
  "hex",
  "sha2",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "swe_justext4_ext4"
-version = "0.1.0"
-dependencies = [
- "swe_justext4_spec",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "swe_justext4_spec"
-version = "0.1.0"
-dependencies = [
  "thiserror 2.0.18",
 ]
 
@@ -1010,8 +1010,8 @@ dependencies = [
  "clap",
  "dirs-next",
  "serde_json",
+ "swe_fs_ext4_ext4",
  "swe_justcas_cas",
- "swe_justext4_ext4",
  "swe_justpkg_config",
  "swe_justpkg_nix",
  "swe_justpkg_pkg",

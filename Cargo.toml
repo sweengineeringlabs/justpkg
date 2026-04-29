@@ -32,7 +32,7 @@ justpkg-vminit  = { path = "main/features/vminit",  package = "swe_justpkg_vmini
 cas = { path = "../justcas/cas", package = "swe_justcas_cas" }
 
 # ext4 image reader — used by `justpkg verify-image` to probe binaries.
-ext4 = { path = "../justext4/ext4", package = "swe_justext4_ext4" }
+ext4 = { path = "../filesystem/justext4/ext4", package = "swe_fs_ext4_ext4" }
 
 # ── External ──────────────────────────────────────────────────────────────
 thiserror  = "2"
