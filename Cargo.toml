@@ -6,6 +6,7 @@ members = [
     "main/features/nix",
     "main/features/cli",
     "main/features/vminit",
+    "main/features/resolve",
 ]
 
 [workspace.package]
@@ -18,15 +19,20 @@ rust-version = "1.75"
 
 [workspace.dependencies]
 # ── Internal ──────────────────────────────────────────────────────────────
-justpkg-config = { path = "main/features/config", package = "swe_justpkg_config" }
-justpkg-pkg    = { path = "main/features/pkg",    package = "swe_justpkg_pkg"    }
-justpkg-nix    = { path = "main/features/nix",    package = "swe_justpkg_nix"    }
+justpkg-config  = { path = "main/features/config",  package = "swe_justpkg_config"  }
+justpkg-pkg     = { path = "main/features/pkg",     package = "swe_justpkg_pkg"     }
+justpkg-nix     = { path = "main/features/nix",     package = "swe_justpkg_nix"     }
+justpkg-resolve = { path = "main/features/resolve", package = "swe_justpkg_resolve" }
+justpkg-vminit  = { path = "main/features/vminit",  package = "swe_justpkg_vminit"  }
 
-# ── Cross-repo sibling — justcas ──────────────────────────────────────────
+# ── Cross-repo siblings ───────────────────────────────────────────────────
 # Content-addressed storage primitive. justpkg stores every fetched blob
 # (narinfo, compressed NAR) in the CAS keyed by its SHA-256 digest.
 # CDN is only hit on a cache miss; integrity is verified on every read.
 cas = { path = "../justcas/cas", package = "swe_justcas_cas" }
+
+# ext4 image reader — used by `justpkg verify-image` to probe binaries.
+ext4 = { path = "../justext4/ext4", package = "swe_justext4_ext4" }
 
 # ── External ──────────────────────────────────────────────────────────────
 thiserror  = "2"

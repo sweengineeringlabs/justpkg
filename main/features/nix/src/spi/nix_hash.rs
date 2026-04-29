@@ -68,7 +68,7 @@ pub fn sri_to_hex(sri: &str) -> Result<String, NixFetchError> {
 ///
 /// This is the inverse of `nix_base32_decode`. Ported from Nix C++ `printHash32`.
 pub fn nix_base32_encode(bytes: &[u8]) -> String {
-    let out_len = (bytes.len() * 8 + 4) / 5;
+    let out_len = (bytes.len() * 8).div_ceil(5);
     let mut out = Vec::with_capacity(out_len);
     for n in (0..out_len).rev() {
         let b = n * 5;

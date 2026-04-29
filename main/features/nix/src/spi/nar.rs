@@ -147,18 +147,29 @@ fn read_symlink<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
     std::os::unix::fs::symlink(&_target, path)
         .map_err(|e| NixFetchError::NarExtract(format!("symlink {path:?} -> {_target}: {e}")))?;
 
-    // On Windows: write target as a text file (symlinks require elevated privileges)
+    // On Windows, try real symlinks first (works with Developer Mode on Windows 10+).
+    // Fall back to a text stub only if both file and directory symlinks fail — this
+    // preserves the image build path (build-from-tree treats stubs as regular files,
+    // which breaks ELF verification).
     #[cfg(windows)]
     {
-        use std::io::Write;
+        use std::os::windows::fs::{symlink_dir, symlink_file};
+
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| NixFetchError::NarExtract(format!("mkdir: {e}")))?;
         }
-        let mut f = std::fs::File::create(path)
-            .map_err(|e| NixFetchError::NarExtract(format!("create symlink stub: {e}")))?;
-        writeln!(f, "{_target}")
-            .map_err(|e| NixFetchError::NarExtract(format!("write symlink stub: {e}")))?;
+
+        let created = symlink_file(&_target, path).is_ok()
+            || symlink_dir(&_target, path).is_ok();
+
+        if !created {
+            use std::io::Write;
+            let mut f = std::fs::File::create(path)
+                .map_err(|e| NixFetchError::NarExtract(format!("create symlink stub: {e}")))?;
+            writeln!(f, "{_target}")
+                .map_err(|e| NixFetchError::NarExtract(format!("write symlink stub: {e}")))?;
+        }
     }
 
     expect_str(r, ")")?;

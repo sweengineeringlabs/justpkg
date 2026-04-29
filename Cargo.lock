@@ -988,6 +988,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "swe_justext4_ext4"
+version = "0.1.0"
+dependencies = [
+ "swe_justext4_spec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "swe_justext4_spec"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "swe_justpkg_cli"
 version = "0.1.0"
 dependencies = [
@@ -996,9 +1011,12 @@ dependencies = [
  "dirs-next",
  "serde_json",
  "swe_justcas_cas",
+ "swe_justext4_ext4",
  "swe_justpkg_config",
  "swe_justpkg_nix",
  "swe_justpkg_pkg",
+ "swe_justpkg_resolve",
+ "swe_justpkg_vminit",
 ]
 
 [[package]]
@@ -1042,6 +1060,19 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "ureq",
+ "xz2",
+]
+
+[[package]]
+name = "swe_justpkg_resolve"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "swe_justpkg_pkg",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
  "xz2",
 ]
 

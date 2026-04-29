@@ -62,10 +62,12 @@ impl justpkg_pkg::HttpClient for CountingHttpClient {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/// Store paths use real 32-char Nix-base32 hashes so `build_store_path`
+/// proceeds past the validation step and actually calls the HTTP client.
 const TWO_ENTRY_MANIFEST: &str = r#"{
     "packages": {
-        "curl": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-        "git":  "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+        "curl": "/nix/store/aaaabbbbccccddddeeeeffffgggg0000-curl-8.10.1",
+        "git":  "/nix/store/bbbbccccddddeeeeffffgggg00001111-git-2.46.0"
     }
 }"#;
 

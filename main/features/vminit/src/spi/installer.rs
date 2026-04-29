@@ -1,12 +1,14 @@
 /// Fetch and extract each listed package using the manifest and `NixFetcher`.
 ///
 /// For each `name` in `names`:
-/// 1. Look up the SRI hash in `manifest.entries` — returns [`VminitInstallError::PackageNotFound`] if absent.
-/// 2. Construct a synthetic [`FlakeLock`] whose single locked node carries that SRI.
-/// 3. Delegate to `NixFetcher::build` — maps errors to [`VminitInstallError::FetchFailed`].
+/// 1. Look up the Nix store path in `manifest.entries` — returns
+///    [`VminitInstallError::PackageNotFound`] if absent.
+/// 2. Delegate to `NixFetcher::build_store_path` — maps errors to
+///    [`VminitInstallError::FetchFailed`].  `build_store_path` resolves the full
+///    transitive closure by following `References` in each narinfo.
 use std::path::Path;
 
-use justpkg_nix::{FlakeLock, NixFetcher, DEFAULT_CACHE_BASE};
+use justpkg_nix::{NixFetcher, DEFAULT_CACHE_BASE};
 use justpkg_pkg::HttpClient;
 
 use crate::api::error::VminitInstallError;
@@ -19,7 +21,7 @@ pub fn install_packages(
     dest_dir: &Path,
 ) -> Result<(), VminitInstallError> {
     for &name in names {
-        let sri =
+        let store_path =
             manifest
                 .entries
                 .get(name)
@@ -27,40 +29,13 @@ pub fn install_packages(
                     name: name.to_string(),
                 })?;
 
-        let lock = build_synthetic_lock(name, sri);
         let fetcher = NixFetcher { http, cache_base: DEFAULT_CACHE_BASE };
         fetcher
-            .build(&lock, dest_dir)
+            .build_store_path(store_path, dest_dir)
             .map_err(|source| VminitInstallError::FetchFailed {
                 name: name.to_string(),
                 source,
             })?;
     }
     Ok(())
-}
-
-/// Construct a minimal [`FlakeLock`] (version 7) containing a single locked node
-/// for `name` with the given `nar_hash` SRI.  All optional fields are omitted.
-fn build_synthetic_lock(name: &str, nar_hash: &str) -> FlakeLock {
-    // Build as JSON so we reuse the existing serde Deserialize path on FlakeLock
-    // and stay in sync with any future schema changes.
-    let name_escaped = serde_json::Value::String(name.to_string()).to_string();
-    let hash_escaped = serde_json::Value::String(nar_hash.to_string()).to_string();
-    let json = format!(
-        r#"{{
-            "nodes": {{
-                "root": {{ "inputs": {{ "pkg": {name_escaped} }} }},
-                {name_escaped}: {{
-                    "locked": {{
-                        "narHash": {hash_escaped},
-                        "type": "tarball"
-                    }},
-                    "inputs": {{}}
-                }}
-            }},
-            "root": "root",
-            "version": 7
-        }}"#
-    );
-    FlakeLock::from_json(&json).expect("synthetic FlakeLock JSON is always well-formed")
 }

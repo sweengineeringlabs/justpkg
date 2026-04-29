@@ -2,7 +2,7 @@
 ///
 /// Expected format:
 /// ```json
-/// {"packages": {"curl": "sha256-xxx", "git": "sha256-yyy"}}
+/// {"packages": {"curl": "/nix/store/<hash>-curl-8.x", "git": "/nix/store/<hash>-git-2.x"}}
 /// ```
 ///
 /// Returns [`VminitInstallError::ManifestParse`] for any malformed input.
