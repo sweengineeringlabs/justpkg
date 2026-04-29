@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "main/features/core",
+    "main/features/nix",
+    "main/features/cli",
+]
+
+[workspace.package]
+edition    = "2021"
+license    = "Apache-2.0"
+repository = "https://github.com/sweengineeringlabs/justpkg"
+homepage   = "https://github.com/sweengineeringlabs/justpkg"
+authors    = ["SWE Engineering Labs"]
+rust-version = "1.75"
+
+[workspace.dependencies]
+# ── Internal ──────────────────────────────────────────────────────────────
+justpkg-core = { path = "main/features/core", package = "swe_justpkg_core" }
+justpkg-nix  = { path = "main/features/nix",  package = "swe_justpkg_nix"  }
+
+# ── Cross-repo sibling — justcas ──────────────────────────────────────────
+# Content-addressed storage primitive. justpkg stores every fetched blob
+# (narinfo, compressed NAR) in the CAS keyed by its SHA-256 digest.
+# CDN is only hit on a cache miss; integrity is verified on every read.
+cas = { path = "../justcas/cas", package = "swe_justcas_cas" }
+
+# ── External ──────────────────────────────────────────────────────────────
+thiserror  = "2"
+anyhow     = "1"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml       = "0.8"
+clap       = { version = "4", features = ["derive"] }
+ureq       = { version = "2", features = ["native-tls"] }
+sha2       = "0.10"
+hex        = "0.4"
+flate2     = "1"
+xz2        = "0.1"
+tar        = "0.4"
+tempfile   = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

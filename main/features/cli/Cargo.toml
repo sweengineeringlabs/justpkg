@@ -1,0 +1,23 @@
+[package]
+name        = "swe_justpkg_cli"
+version     = "0.1.0"
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+authors.workspace      = true
+rust-version.workspace = true
+description = "justpkg — Nix NAR fetcher and extractor CLI"
+
+[[bin]]
+name = "justpkg"
+path = "src/main.rs"
+
+[dependencies]
+justpkg-core = { workspace = true }
+justpkg-nix  = { workspace = true }
+cas  = { workspace = true }
+anyhow     = { workspace = true }
+clap       = { workspace = true }
+serde_json = { workspace = true }
+dirs-next  = "2"
