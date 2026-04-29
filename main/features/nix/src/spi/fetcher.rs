@@ -140,6 +140,26 @@ impl<'a> NixFetcher<'a> {
         NarInfo::parse(store_hash, &narinfo_text)
     }
 
+    /// Fetch and extract a single Nix store path and its full transitive closure
+    /// into `dest_dir`.
+    ///
+    /// `store_path` must be an absolute path under `/nix/store/` with the standard
+    /// layout `/<32-char-hash>-<name>-<version>`.  The store hash is extracted and
+    /// used to fetch the `.narinfo` from `cache.nixos.org`.
+    pub fn build_store_path(&self, store_path: &str, dest_dir: &Path) -> Result<(), NixFetchError> {
+        let basename = store_path
+            .strip_prefix("/nix/store/")
+            .ok_or_else(|| NixFetchError::NarExtract(format!("invalid store path: {store_path:?}")))?;
+        let store_hash = basename
+            .split_once('-')
+            .map(|(h, _)| h)
+            .ok_or_else(|| {
+                NixFetchError::NarExtract(format!("store path missing hash separator: {store_path:?}"))
+            })?;
+        let mut visited = std::collections::HashSet::new();
+        self.build_with_closure(store_hash, dest_dir, &mut visited)
+    }
+
     fn build_with_closure(
         &self,
         store_hash: &str,
@@ -296,6 +316,46 @@ mod tests {
         assert!(
             matches!(result, Err(NixFetchError::NarExtract(_))),
             "verify_nar_hash must return NarExtract for invalid base-32 input"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_build_store_path {
+    use super::*;
+    use justpkg_pkg::JustpkgError;
+
+    struct PanicClient;
+    impl HttpClient for PanicClient {
+        fn get_bytes(&self, _url: &str) -> Result<Vec<u8>, JustpkgError> {
+            panic!("PanicClient: no HTTP request should be made for invalid store paths");
+        }
+        fn get_stream(&self, _url: &str, _out: &mut dyn std::io::Write) -> Result<u64, JustpkgError> {
+            panic!("PanicClient: no HTTP request should be made for invalid store paths");
+        }
+    }
+
+    #[test]
+    fn test_build_store_path_rejects_path_without_nix_store_prefix() {
+        let fetcher = NixFetcher { http: &PanicClient };
+        let err = fetcher
+            .build_store_path("/usr/local/abc123-curl-8.0", std::path::Path::new("/dest"))
+            .unwrap_err();
+        assert!(
+            matches!(err, NixFetchError::NarExtract(_)),
+            "must reject paths not under /nix/store/, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_build_store_path_rejects_path_without_hash_separator() {
+        let fetcher = NixFetcher { http: &PanicClient };
+        let err = fetcher
+            .build_store_path("/nix/store/nohyphennamehere", std::path::Path::new("/dest"))
+            .unwrap_err();
+        assert!(
+            matches!(err, NixFetchError::NarExtract(_)),
+            "must reject paths missing the hash-name hyphen separator, got: {err:?}"
         );
     }
 }
