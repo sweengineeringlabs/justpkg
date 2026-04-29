@@ -21,13 +21,13 @@ pub enum VersionConstraint {
 impl std::fmt::Display for VersionConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Any        => write!(f, "*"),
-            Self::Eq(v)      => write!(f, "={v}"),
-            Self::Gte(v)     => write!(f, ">={v}"),
-            Self::Gt(v)      => write!(f, ">{v}"),
-            Self::Lte(v)     => write!(f, "<={v}"),
-            Self::Lt(v)      => write!(f, "<{v}"),
-            Self::Tilde(v)   => write!(f, "~{v}"),
+            Self::Any => write!(f, "*"),
+            Self::Eq(v) => write!(f, "={v}"),
+            Self::Gte(v) => write!(f, ">={v}"),
+            Self::Gt(v) => write!(f, ">{v}"),
+            Self::Lte(v) => write!(f, "<={v}"),
+            Self::Lt(v) => write!(f, "<{v}"),
+            Self::Tilde(v) => write!(f, "~{v}"),
         }
     }
 }

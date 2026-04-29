@@ -64,5 +64,8 @@ fn test_extract_nar_normal_entry_does_not_escape_dest() {
     let dir = tempfile::tempdir().unwrap();
     extract_nar(std::io::Cursor::new(nar), dir.path()).unwrap();
     let expected = dir.path().join("subdir").join("file.txt");
-    assert!(expected.exists(), "normal entry must be written inside dest");
+    assert!(
+        expected.exists(),
+        "normal entry must be written inside dest"
+    );
 }

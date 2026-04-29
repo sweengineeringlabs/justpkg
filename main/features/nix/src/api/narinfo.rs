@@ -38,31 +38,33 @@ impl NarInfo {
         for line in text.lines() {
             if let Some((key, val)) = line.split_once(": ") {
                 match key {
-                    "StorePath"   => store_path  = val.to_string(),
-                    "URL"         => url         = val.to_string(),
-                    "Compression" => compression = match val {
-                        "xz"    => Compression::Xz,
-                        "zstd"  => Compression::Zstd,
-                        "bzip2" => Compression::Bzip2,
-                        "none"  => Compression::None,
-                        other   => return Err(NixFetchError::NarInfoParse {
-                            hash: hash.to_string(),
-                            message: format!("unknown compression: {other}"),
-                        }),
-                    },
+                    "StorePath" => store_path = val.to_string(),
+                    "URL" => url = val.to_string(),
+                    "Compression" => {
+                        compression = match val {
+                            "xz" => Compression::Xz,
+                            "zstd" => Compression::Zstd,
+                            "bzip2" => Compression::Bzip2,
+                            "none" => Compression::None,
+                            other => {
+                                return Err(NixFetchError::NarInfoParse {
+                                    hash: hash.to_string(),
+                                    message: format!("unknown compression: {other}"),
+                                })
+                            }
+                        }
+                    }
                     "FileHash" => {
                         // format: "sha256:<hex-or-base32>"
                         file_hash = val.trim_start_matches("sha256:").to_string();
                     }
-                    "FileSize"   => file_size = val.parse().unwrap_or(0),
-                    "NarHash"    => {
+                    "FileSize" => file_size = val.parse().unwrap_or(0),
+                    "NarHash" => {
                         nar_hash = val.trim_start_matches("sha256:").to_string();
                     }
-                    "NarSize"    => nar_size = val.parse().unwrap_or(0),
+                    "NarSize" => nar_size = val.parse().unwrap_or(0),
                     "References" => {
-                        references = val.split_whitespace()
-                            .map(str::to_string)
-                            .collect();
+                        references = val.split_whitespace().map(str::to_string).collect();
                     }
                     _ => {}
                 }
@@ -76,6 +78,15 @@ impl NarInfo {
             });
         }
 
-        Ok(NarInfo { store_path, url, compression, file_hash, file_size, nar_hash, nar_size, references })
+        Ok(NarInfo {
+            store_path,
+            url,
+            compression,
+            file_hash,
+            file_size,
+            nar_hash,
+            nar_size,
+            references,
+        })
     }
 }

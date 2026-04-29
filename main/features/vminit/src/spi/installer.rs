@@ -6,8 +6,8 @@
 /// 3. Delegate to `NixFetcher::build` — maps errors to [`VminitInstallError::FetchFailed`].
 use std::path::Path;
 
-use justpkg_pkg::HttpClient;
 use justpkg_nix::{FlakeLock, NixFetcher};
+use justpkg_pkg::HttpClient;
 
 use crate::api::error::VminitInstallError;
 use crate::api::manifest::PackageManifest;
@@ -19,11 +19,13 @@ pub fn install_packages(
     dest_dir: &Path,
 ) -> Result<(), VminitInstallError> {
     for &name in names {
-        let sri = manifest.entries.get(name).ok_or_else(|| {
-            VminitInstallError::PackageNotFound {
-                name: name.to_string(),
-            }
-        })?;
+        let sri =
+            manifest
+                .entries
+                .get(name)
+                .ok_or_else(|| VminitInstallError::PackageNotFound {
+                    name: name.to_string(),
+                })?;
 
         let lock = build_synthetic_lock(name, sri);
         let fetcher = NixFetcher { http };
@@ -60,6 +62,5 @@ fn build_synthetic_lock(name: &str, nar_hash: &str) -> FlakeLock {
             "version": 7
         }}"#
     );
-    FlakeLock::from_json(&json)
-        .expect("synthetic FlakeLock JSON is always well-formed")
+    FlakeLock::from_json(&json).expect("synthetic FlakeLock JSON is always well-formed")
 }

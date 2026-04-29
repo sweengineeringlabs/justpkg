@@ -9,17 +9,17 @@
 use std::io::Read;
 use std::path::Path;
 
-use justpkg_pkg::safe_path_join;
 use crate::api::error::NixFetchError;
+use justpkg_pkg::safe_path_join;
 
 const NAR_MAGIC: &str = "nix-archive-1";
 
 pub fn extract_nar<R: Read>(mut reader: R, dest: &Path) -> Result<(), NixFetchError> {
     let magic = read_nar_str(&mut reader)?;
     if magic != NAR_MAGIC {
-        return Err(NixFetchError::NarExtract(
-            format!("invalid NAR magic: expected '{NAR_MAGIC}', got '{magic}'")
-        ));
+        return Err(NixFetchError::NarExtract(format!(
+            "invalid NAR magic: expected '{NAR_MAGIC}', got '{magic}'"
+        )));
     }
     read_nar_node(&mut reader, dest, dest)
 }
@@ -48,9 +48,11 @@ fn read_nar_node<R: Read>(r: &mut R, current: &Path, base: &Path) -> Result<(), 
         "regular" => read_regular(r, current)?,
         "directory" => read_directory(r, current, base)?,
         "symlink" => read_symlink(r, current)?,
-        other => return Err(NixFetchError::NarExtract(
-            format!("unknown NAR node type: {other}")
-        )),
+        other => {
+            return Err(NixFetchError::NarExtract(format!(
+                "unknown NAR node type: {other}"
+            )))
+        }
     }
 
     expect_str(r, ")")?;
@@ -66,7 +68,9 @@ fn read_regular<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
             "executable" => {
                 expect_str(r, "")?;
                 #[cfg(unix)]
-                { executable = true; }
+                {
+                    executable = true;
+                }
             }
             "contents" => {
                 let mut len_buf = [0u8; 8];
@@ -99,9 +103,11 @@ fn read_regular<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
                 }
             }
             ")" => return Ok(()),
-            other => return Err(NixFetchError::NarExtract(
-                format!("unexpected field in regular node: {other}")
-            )),
+            other => {
+                return Err(NixFetchError::NarExtract(format!(
+                    "unexpected field in regular node: {other}"
+                )))
+            }
         }
     }
 }
@@ -124,9 +130,11 @@ fn read_directory<R: Read>(r: &mut R, path: &Path, base: &Path) -> Result<(), Ni
                 expect_str(r, ")")?;
             }
             ")" => return Ok(()),
-            other => return Err(NixFetchError::NarExtract(
-                format!("unexpected field in directory node: {other}")
-            )),
+            other => {
+                return Err(NixFetchError::NarExtract(format!(
+                    "unexpected field in directory node: {other}"
+                )))
+            }
         }
     }
 }
@@ -159,9 +167,9 @@ fn read_symlink<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
 fn expect_str<R: Read>(r: &mut R, expected: &str) -> Result<(), NixFetchError> {
     let got = read_nar_str(r)?;
     if got != expected {
-        return Err(NixFetchError::NarExtract(
-            format!("expected '{expected}', got '{got}'")
-        ));
+        return Err(NixFetchError::NarExtract(format!(
+            "expected '{expected}', got '{got}'"
+        )));
     }
     Ok(())
 }

@@ -12,9 +12,14 @@ fn test_manifest_parse_error_display_contains_message() {
 
 #[test]
 fn test_package_not_found_error_display_contains_name() {
-    let e = VminitInstallError::PackageNotFound { name: "curl".to_string() };
+    let e = VminitInstallError::PackageNotFound {
+        name: "curl".to_string(),
+    };
     let s = e.to_string();
-    assert!(s.contains("curl"), "display must include the package name: {s}");
+    assert!(
+        s.contains("curl"),
+        "display must include the package name: {s}"
+    );
 }
 
 #[test]
@@ -25,6 +30,8 @@ fn test_manifest_parse_error_is_debug_formattable() {
 
 #[test]
 fn test_package_not_found_error_is_debug_formattable() {
-    let e = VminitInstallError::PackageNotFound { name: "git".to_string() };
+    let e = VminitInstallError::PackageNotFound {
+        name: "git".to_string(),
+    };
     let _ = format!("{e:?}");
 }

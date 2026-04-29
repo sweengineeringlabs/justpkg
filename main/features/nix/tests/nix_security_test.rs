@@ -8,7 +8,10 @@ use swe_justpkg_nix::{sri_to_hex, NixFetchError};
 fn test_sri_to_hex_rejects_empty_string() {
     let result = sri_to_hex("");
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), NixFetchError::InvalidNixHash(_)));
+    assert!(matches!(
+        result.unwrap_err(),
+        NixFetchError::InvalidNixHash(_)
+    ));
 }
 
 #[test]
@@ -25,5 +28,8 @@ fn test_sri_to_hex_rejects_only_prefix() {
 fn test_sri_to_hex_rejects_hash_with_null_byte() {
     let result = sri_to_hex("sha256-AA\x00AA");
     // null bytes in a hash string indicate malformed input
-    assert!(result.is_err(), "null byte in SRI must not silently produce a hash");
+    assert!(
+        result.is_err(),
+        "null byte in SRI must not silently produce a hash"
+    );
 }

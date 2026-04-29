@@ -151,7 +151,10 @@ fn test_install_packages_stops_on_first_error() {
 
     let result = install_packages(&http, &manifest, &["curl", "git"], dir.path());
 
-    assert!(result.is_err(), "first HTTP failure must abort the whole call");
+    assert!(
+        result.is_err(),
+        "first HTTP failure must abort the whole call"
+    );
     // NixFetcher calls get_bytes once per package (for the narinfo).
     // Because we stop on first error, exactly 1 HTTP call must happen.
     assert_eq!(

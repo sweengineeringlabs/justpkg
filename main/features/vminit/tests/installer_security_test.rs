@@ -53,7 +53,10 @@ fn test_install_packages_name_with_path_separator_is_rejected_as_not_found() {
             "name {dangerous:?} must not succeed — it is not in the manifest"
         );
         assert!(
-            matches!(result.unwrap_err(), VminitInstallError::PackageNotFound { .. }),
+            matches!(
+                result.unwrap_err(),
+                VminitInstallError::PackageNotFound { .. }
+            ),
             "adversarial name {dangerous:?} must yield PackageNotFound, not a panic or path escape"
         );
     }
@@ -111,7 +114,10 @@ fn test_install_packages_very_long_name_does_not_panic() {
         "very long name must fail — it is not in the manifest"
     );
     assert!(
-        matches!(result.unwrap_err(), VminitInstallError::PackageNotFound { .. }),
+        matches!(
+            result.unwrap_err(),
+            VminitInstallError::PackageNotFound { .. }
+        ),
         "very long name must yield PackageNotFound, not a panic"
     );
 }
@@ -135,7 +141,10 @@ fn test_install_packages_name_with_null_byte_is_not_in_manifest() {
         "name with null byte must not be found in manifest"
     );
     assert!(
-        matches!(result.unwrap_err(), VminitInstallError::PackageNotFound { .. }),
+        matches!(
+            result.unwrap_err(),
+            VminitInstallError::PackageNotFound { .. }
+        ),
         "null-byte name must yield PackageNotFound"
     );
 }

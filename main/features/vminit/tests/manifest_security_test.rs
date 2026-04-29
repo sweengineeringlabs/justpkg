@@ -34,10 +34,7 @@ fn test_parse_manifest_missing_packages_key_returns_manifest_parse_error() {
 fn test_parse_manifest_empty_string_returns_error() {
     // An empty string is not valid JSON.
     let result = parse_manifest("");
-    assert!(
-        result.is_err(),
-        "empty string must not produce a manifest"
-    );
+    assert!(result.is_err(), "empty string must not produce a manifest");
     assert!(
         matches!(result.unwrap_err(), VminitInstallError::ManifestParse(_)),
         "error variant must be ManifestParse"
@@ -71,10 +68,7 @@ fn test_parse_manifest_entry_with_non_string_hash_returns_error() {
     // must not silently produce an entry with a garbage hash.
     let bad = r#"{"packages": {"curl": 12345}}"#;
     let result = parse_manifest(bad);
-    assert!(
-        result.is_err(),
-        "non-string hash value must be rejected"
-    );
+    assert!(result.is_err(), "non-string hash value must be rejected");
     assert!(
         matches!(result.unwrap_err(), VminitInstallError::ManifestParse(_)),
         "error variant must be ManifestParse"

@@ -1,4 +1,4 @@
 mod api;
-mod spi;
 pub mod saf;
+mod spi;
 pub use saf::*;

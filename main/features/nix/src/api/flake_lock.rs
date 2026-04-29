@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 /// Deserialised `flake.lock` — version 7 format.
 ///
@@ -56,7 +56,11 @@ impl FlakeLock {
     /// Returns all locked nodes (excludes the root node).
     pub fn locked_nodes(&self) -> impl Iterator<Item = (&String, &LockedNode)> {
         self.nodes.iter().filter_map(|(k, v)| {
-            if let Node::Locked(n) = v { Some((k, n)) } else { None }
+            if let Node::Locked(n) = v {
+                Some((k, n))
+            } else {
+                None
+            }
         })
     }
 }

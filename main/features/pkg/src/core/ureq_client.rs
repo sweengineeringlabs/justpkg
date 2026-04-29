@@ -1,8 +1,8 @@
 use std::io::Read;
 
+use crate::api::error::JustpkgError;
 use crate::api::traits::HttpClient;
 use crate::api::ureq_client::UreqClient;
-use crate::api::error::JustpkgError;
 
 impl HttpClient for UreqClient {
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, JustpkgError> {

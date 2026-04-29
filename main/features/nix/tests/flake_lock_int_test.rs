@@ -33,8 +33,14 @@ fn test_from_json_parses_valid_flake_lock() {
 fn test_locked_nodes_excludes_root_node() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let names: Vec<&str> = lock.locked_nodes().map(|(k, _)| k.as_str()).collect();
-    assert!(!names.contains(&"root"), "root node must not appear in locked_nodes()");
-    assert!(names.contains(&"nixpkgs"), "nixpkgs locked node must appear");
+    assert!(
+        !names.contains(&"root"),
+        "root node must not appear in locked_nodes()"
+    );
+    assert!(
+        names.contains(&"nixpkgs"),
+        "nixpkgs locked node must appear"
+    );
 }
 
 #[test]

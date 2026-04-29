@@ -3,7 +3,8 @@
 // single regression in the parser breaks exactly the tests that cover it.
 use swe_justpkg_vminit::parse_manifest;
 
-const SINGLE_ENTRY: &str = r#"{"packages": {"curl": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}}"#;
+const SINGLE_ENTRY: &str =
+    r#"{"packages": {"curl": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}}"#;
 const MULTI_ENTRY: &str = r#"{
     "packages": {
         "curl": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -36,23 +37,31 @@ fn test_parse_manifest_empty_packages_returns_empty_manifest() {
 #[test]
 fn test_parse_manifest_multiple_entries_all_parsed() {
     let manifest = parse_manifest(MULTI_ENTRY).expect("multi-entry JSON must parse");
-    assert_eq!(manifest.entries.len(), 3, "all three packages must be present");
-    assert!(manifest.entries.contains_key("curl"), "curl must be present");
+    assert_eq!(
+        manifest.entries.len(),
+        3,
+        "all three packages must be present"
+    );
+    assert!(
+        manifest.entries.contains_key("curl"),
+        "curl must be present"
+    );
     assert!(manifest.entries.contains_key("git"), "git must be present");
-    assert!(manifest.entries.contains_key("bash"), "bash must be present");
+    assert!(
+        manifest.entries.contains_key("bash"),
+        "bash must be present"
+    );
 }
 
 #[test]
 fn test_parse_manifest_lookup_by_name_returns_correct_sri() {
     let manifest = parse_manifest(MULTI_ENTRY).expect("multi-entry JSON must parse");
     assert_eq!(
-        manifest.entries["git"],
-        "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+        manifest.entries["git"], "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
         "git SRI must equal the value in the JSON"
     );
     assert_eq!(
-        manifest.entries["bash"],
-        "sha256-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
+        manifest.entries["bash"], "sha256-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
         "bash SRI must equal the value in the JSON"
     );
 }

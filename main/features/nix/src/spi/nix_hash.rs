@@ -20,13 +20,13 @@ pub fn nix_base32_decode(s: &str) -> Result<Vec<u8>, NixFetchError> {
         let digit = NIX_BASE32_CHARS
             .iter()
             .position(|&x| x == c)
-            .ok_or_else(|| NixFetchError::InvalidNixHash(
-                format!("invalid base-32 char '{}'", c as char)
-            ))? as u64;
+            .ok_or_else(|| {
+                NixFetchError::InvalidNixHash(format!("invalid base-32 char '{}'", c as char))
+            })? as u64;
 
         let b = i * 5;
         let byte_idx = b / 8;
-        let bit_off  = b % 8;
+        let bit_off = b % 8;
 
         if byte_idx < out_len {
             out[byte_idx] |= (digit << bit_off) as u8;
@@ -51,16 +51,15 @@ pub fn nix_base32_to_hex(s: &str) -> Result<String, NixFetchError> {
 pub fn sri_to_hex(sri: &str) -> Result<String, NixFetchError> {
     let b64 = sri
         .strip_prefix("sha256-")
-        .ok_or_else(|| NixFetchError::InvalidNixHash(
-            format!("SRI hash must start with 'sha256-', got: {sri}")
-        ))?
+        .ok_or_else(|| {
+            NixFetchError::InvalidNixHash(format!("SRI hash must start with 'sha256-', got: {sri}"))
+        })?
         .trim_end_matches('=');
 
     // standard base64 alphabet
-    let bytes = base64_decode(b64)
-        .ok_or_else(|| NixFetchError::InvalidNixHash(
-            format!("invalid base-64 in SRI hash: {sri}")
-        ))?;
+    let bytes = base64_decode(b64).ok_or_else(|| {
+        NixFetchError::InvalidNixHash(format!("invalid base-64 in SRI hash: {sri}"))
+    })?;
 
     Ok(hex::encode(bytes))
 }
@@ -71,7 +70,7 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
     let bytes: Vec<u8> = s.bytes().collect();
     let mut i = 0;
     while i + 3 < bytes.len() {
-        let a = alphabet.iter().position(|&x| x == bytes[i])?     as u32;
+        let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
         let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
         let c = alphabet.iter().position(|&x| x == bytes[i + 2])? as u32;
         let d = alphabet.iter().position(|&x| x == bytes[i + 3])? as u32;
@@ -84,12 +83,12 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
     // handle remaining bytes
     match bytes.len() - i {
         2 => {
-            let a = alphabet.iter().position(|&x| x == bytes[i])?     as u32;
+            let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
             let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
             out.push(((a << 2) | (b >> 4)) as u8);
         }
         3 => {
-            let a = alphabet.iter().position(|&x| x == bytes[i])?     as u32;
+            let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
             let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
             let c = alphabet.iter().position(|&x| x == bytes[i + 2])? as u32;
             out.push(((a << 2) | (b >> 4)) as u8);

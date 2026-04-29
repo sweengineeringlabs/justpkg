@@ -51,13 +51,22 @@ fn test_parse_unknown_compression_returns_err() {
 #[test]
 fn test_parse_strips_sha256_prefix_from_hashes() {
     let info = NarInfo::parse("abc123", VALID_NARINFO).unwrap();
-    assert!(!info.file_hash.starts_with("sha256:"), "sha256: prefix must be stripped");
-    assert!(!info.nar_hash.starts_with("sha256:"), "sha256: prefix must be stripped");
+    assert!(
+        !info.file_hash.starts_with("sha256:"),
+        "sha256: prefix must be stripped"
+    );
+    assert!(
+        !info.nar_hash.starts_with("sha256:"),
+        "sha256: prefix must be stripped"
+    );
 }
 
 #[test]
 fn test_parse_empty_references_is_valid() {
     let text = "StorePath: /nix/store/abc\nURL: nar/x.nar.xz\nReferences: \n";
     let info = NarInfo::parse("abc", text).unwrap();
-    assert!(info.references.is_empty(), "empty References field must produce empty vec");
+    assert!(
+        info.references.is_empty(),
+        "empty References field must produce empty vec"
+    );
 }

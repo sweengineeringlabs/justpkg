@@ -1,5 +1,5 @@
-use thiserror::Error;
 use justpkg_pkg::JustpkgError;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum NixFetchError {
