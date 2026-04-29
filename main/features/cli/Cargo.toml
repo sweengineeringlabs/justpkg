@@ -14,7 +14,7 @@ name = "justpkg"
 path = "src/main.rs"
 
 [dependencies]
-justpkg-core = { workspace = true }
+justpkg-pkg = { workspace = true }
 justpkg-nix  = { workspace = true }
 cas  = { workspace = true }
 anyhow     = { workspace = true }

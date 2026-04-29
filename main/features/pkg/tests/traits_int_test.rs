@@ -1,5 +1,5 @@
 use std::path::Path;
-use swe_justpkg_core::api::traits::safe_path_join;
+use swe_justpkg_pkg::safe_path_join;
 
 #[test]
 fn test_safe_path_join_normal_path_resolves() {

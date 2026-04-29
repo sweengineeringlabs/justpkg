@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-use justpkg_core::spi::UreqClient;
-use justpkg_nix::{FlakeLock, spi::NixFetcher};
+use justpkg_pkg::UreqClient;
+use justpkg_nix::{FlakeLock, NixFetcher};
 
 #[derive(Parser)]
 #[command(name = "justpkg", about = "Nix NAR fetcher and extractor")]

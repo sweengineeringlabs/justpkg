@@ -3,10 +3,11 @@
 
 use std::path::Path;
 
-use justpkg_core::api::traits::HttpClient;
+use justpkg_pkg::HttpClient;
 
-use crate::api::{FlakeLock, NarInfo, NixFetchError};
-use crate::api::narinfo::Compression;
+use crate::api::flake_lock::FlakeLock;
+use crate::api::narinfo::{Compression, NarInfo};
+use crate::api::error::NixFetchError;
 use crate::spi::nar::extract_nar;
 use crate::spi::nix_hash;
 

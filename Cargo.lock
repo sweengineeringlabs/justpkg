@@ -937,24 +937,8 @@ dependencies = [
  "dirs-next",
  "serde_json",
  "swe_justcas_cas",
- "swe_justpkg_core",
  "swe_justpkg_nix",
-]
-
-[[package]]
-name = "swe_justpkg_core"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "hex",
- "serde",
- "sha2",
- "swe_justcas_cas",
- "tar",
- "tempfile",
- "thiserror 2.0.18",
- "ureq",
- "xz2",
+ "swe_justpkg_pkg",
 ]
 
 [[package]]
@@ -967,10 +951,26 @@ dependencies = [
  "serde_json",
  "sha2",
  "swe_justcas_cas",
- "swe_justpkg_core",
+ "swe_justpkg_pkg",
  "tar",
  "tempfile",
  "thiserror 2.0.18",
+ "xz2",
+]
+
+[[package]]
+name = "swe_justpkg_pkg"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "hex",
+ "serde",
+ "sha2",
+ "swe_justcas_cas",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.18",
+ "ureq",
  "xz2",
 ]
 

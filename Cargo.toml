@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "main/features/core",
+    "main/features/pkg",
     "main/features/nix",
     "main/features/cli",
 ]
@@ -16,7 +16,7 @@ rust-version = "1.75"
 
 [workspace.dependencies]
 # ── Internal ──────────────────────────────────────────────────────────────
-justpkg-core = { path = "main/features/core", package = "swe_justpkg_core" }
+justpkg-pkg = { path = "main/features/pkg", package = "swe_justpkg_pkg" }
 justpkg-nix  = { path = "main/features/nix",  package = "swe_justpkg_nix"  }
 
 # ── Cross-repo sibling — justcas ──────────────────────────────────────────

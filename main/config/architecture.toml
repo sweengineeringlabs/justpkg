@@ -1,0 +1,4 @@
+# SEA project configuration (L0)
+[project]
+name = "justpkg"
+workspaces = ["pkg", "nix", "cli"]

@@ -1,0 +1,1385 @@
+{
+  "timestamp": "2026-04-29T06:09:09.265203400+00:00",
+  "results": [
+    {
+      "id": 1,
+      "category": "structure",
+      "description": "Cargo.toml exists at root",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.2314
+    },
+    {
+      "id": 2,
+      "category": "naming",
+      "description": "Workspace member package names must align with their folder names",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 4,
+      "category": "structure",
+      "description": "Multi-feature workspace applications must define main/config/architecture.toml with [project] name and workspaces",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 4,
+            "path": "main/config/architecture.toml",
+            "message": "Multi-feature workspace is missing main/config/architecture.toml",
+            "severity": "error",
+            "rule_type": "builtin:workspace_architecture_manifest",
+            "expected": "main/config/architecture.toml with [project] name and workspaces",
+            "actual": "missing",
+            "fix_hint": "Create main/config/architecture.toml with # SEA project configuration (L0), [project].name, and [project].workspaces",
+            "remediation_strategy": "declarative"
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "category": "structure",
+      "description": "bootstrap.sh or build.sh exists at root",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 6,
+            "path": "bootstrap.sh",
+            "message": "Neither bootstrap.sh nor build.sh exists at project root",
+            "severity": "error",
+            "rule_type": "builtin:bootstrap_sh_exists",
+            "expected": "bootstrap.sh or build.sh",
+            "actual": "missing",
+            "fix_hint": "Create bootstrap.sh (preferred) or build.sh for project setup",
+            "remediation_strategy": "declarative"
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "category": "structure",
+      "description": "No nested src/ dirs (src/src/)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.057800000000000004
+    },
+    {
+      "id": 8,
+      "category": "structure",
+      "description": "benches/ directory exists (if benchmarks declared)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 19,
+      "category": "cargo_targets",
+      "description": "[lib] path matches existing file",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 20,
+      "category": "cargo_targets",
+      "description": "[[bin]] path matches existing file",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 21,
+      "category": "cargo_targets",
+      "description": "[[test]] targets declared for tests/ files",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 22,
+      "category": "cargo_targets",
+      "description": "[[bench]] targets have harness = false",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 23,
+      "category": "cargo_targets",
+      "description": "No undeclared test files",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 24,
+      "category": "cargo_targets",
+      "description": "No undeclared bench files",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 25,
+      "category": "cargo_targets",
+      "description": "[[example]] targets exist if examples/ present",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 26,
+      "category": "cargo_targets",
+      "description": "[[test]] paths resolve to existing files",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 27,
+      "category": "naming",
+      "description": "Package name uses kebab-case",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.0097
+    },
+    {
+      "id": 28,
+      "category": "naming",
+      "description": "Package name has rustboot_ prefix (rustboot)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.0007
+    },
+    {
+      "id": 29,
+      "category": "naming",
+      "description": "Source files use snake_case naming",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.792
+    },
+    {
+      "id": 30,
+      "category": "naming",
+      "description": "No uppercase in source file names",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.4171
+    },
+    {
+      "id": 31,
+      "category": "naming",
+      "description": "Module file names match mod declarations",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 32,
+      "category": "naming",
+      "description": "Binary names use hyphens or underscores",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 33,
+      "category": "test_org",
+      "description": "Test files use correct suffixes (_test.rs, _int_test.rs, _e2e_test.rs, etc.)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 34,
+      "category": "test_org",
+      "description": "Test function name prefix follows location-aware convention: <feature>_<type_kind>_<fn>_<suffix> for tests/<file>.rs; <type_kind>_<fn>_<suffix> for tests/<feature>/<file>.rs (type_kind ∈ {trait,struct,type,enum})",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 35,
+      "category": "test_org",
+      "description": "Test function name uses either the conventional test_ prefix or a recognised test-category suffix (_test, _int_test, _e2e_test, _perf_test, _security_test, _stress_test, _load_test, _unit_test, _smoke_test, _contract_test)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 36,
+      "category": "test_org",
+      "description": "Integration tests in tests/src/ (rustboot)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 37,
+      "category": "test_org",
+      "description": "Unit tests colocated in source files",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 38,
+      "category": "test_org",
+      "description": "No test code in src/ (non-#[cfg(test)])",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 39,
+      "category": "documentation",
+      "description": "README.md exists",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.1528
+    },
+    {
+      "id": 40,
+      "category": "documentation",
+      "description": "doc/ or docs/ directory exists (if library)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 41,
+      "category": "documentation",
+      "description": "examples/ directory exists (if library)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 42,
+      "category": "documentation",
+      "description": "CHANGELOG.md exists",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.08339999999999999
+    },
+    {
+      "id": 43,
+      "category": "hygiene",
+      "description": ".gitignore exists with target/",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 43,
+            "path": ".gitignore",
+            "message": "File '.gitignore' does not match pattern 'target/'",
+            "severity": "warning",
+            "rule_type": "file_content_matches",
+            "expected": "target/",
+            "actual": "no match",
+            "fix_hint": "Update '.gitignore' so its content matches pattern 'target/'",
+            "remediation_strategy": "declarative"
+          }
+        ]
+      },
+      "duration_ms": 0.49700000000000005
+    },
+    {
+      "id": 44,
+      "category": "hygiene",
+      "description": "No generated files committed (target/)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 52.9287
+    },
+    {
+      "id": 46,
+      "category": "interface",
+      "description": "api/ layer must not import from core/ (L2 must not depend on L3)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.8754
+    },
+    {
+      "id": 47,
+      "category": "interface",
+      "description": "saf/ must not re-export from core/ (SAF re-exports from api/ and spi/ only)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.0327
+    },
+    {
+      "id": 49,
+      "category": "interface",
+      "description": "Core modules must implement their api traits (impl <Trait> for)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 49,
+            "path": "main/features/core/src/api/traits.rs",
+            "message": "Trait 'HttpClient' declared in 'main/features/core/src/api/traits.rs' has no `impl HttpClient for` in core/",
+            "severity": "error",
+            "rule_type": "builtin:core_implements_api_traits",
+            "expected": "impl HttpClient for <Type> somewhere in core/",
+            "actual": "not found",
+            "fix_hint": "Add `impl HttpClient for <YourType>` in a core/ module",
+            "remediation_strategy": "imperative"
+          },
+          {
+            "check_id": 49,
+            "path": "main/features/core/src/api/traits.rs",
+            "message": "Trait 'Extractor' declared in 'main/features/core/src/api/traits.rs' has no `impl Extractor for` in core/",
+            "severity": "error",
+            "rule_type": "builtin:core_implements_api_traits",
+            "expected": "impl Extractor for <Type> somewhere in core/",
+            "actual": "not found",
+            "fix_hint": "Add `impl Extractor for <YourType>` in a core/ module",
+            "remediation_strategy": "imperative"
+          }
+        ]
+      }
+    },
+    {
+      "id": 50,
+      "category": "interface",
+      "description": "Core items (struct, enum, type, trait, fn, const, static) must use pub(crate) visibility, not bare pub",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 53,
+      "category": "interface",
+      "description": "saf/ must not define new pub structs (facade layer only re-exports and wires)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 2.0181
+    },
+    {
+      "id": 55,
+      "category": "interface",
+      "description": "lib.rs must not declare core as public (pub mod core is forbidden)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.0949
+    },
+    {
+      "id": 56,
+      "category": "interface",
+      "description": "lib.rs must not declare api as public (pub mod api is forbidden — all layers must be private)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.1497
+    },
+    {
+      "id": 57,
+      "category": "interface",
+      "description": "spi/ must not import from core/ (L2 peers must not depend on each other)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.6872
+    },
+    {
+      "id": 58,
+      "category": "interface",
+      "description": "When spi/ exists, lib.rs must declare `mod spi` (private, not pub mod)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 58,
+            "path": "main/features/core/src/lib.rs",
+            "message": "'main/features/core/src/lib.rs' has `pub mod spi` but spi must be a private module — all layers must be private; consumers access types only via saf",
+            "severity": "error",
+            "rule_type": "builtin:spi_private_mod_in_lib",
+            "expected": "mod spi;  // private",
+            "actual": "pub mod spi;",
+            "fix_hint": "Change `pub mod spi` to `mod spi` — saf re-exports the spi types consumers need",
+            "remediation_strategy": "declarative"
+          },
+          {
+            "check_id": 58,
+            "path": "main/features/nix/src/lib.rs",
+            "message": "'main/features/nix/src/lib.rs' has `pub mod spi` but spi must be a private module — all layers must be private; consumers access types only via saf",
+            "severity": "error",
+            "rule_type": "builtin:spi_private_mod_in_lib",
+            "expected": "mod spi;  // private",
+            "actual": "pub mod spi;",
+            "fix_hint": "Change `pub mod spi` to `mod spi` — saf re-exports the spi types consumers need",
+            "remediation_strategy": "declarative"
+          }
+        ]
+      }
+    },
+    {
+      "id": 60,
+      "category": "interface",
+      "description": "spi/ must not import from saf/ (L2 must not depend on L3)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.3443
+    },
+    {
+      "id": 61,
+      "category": "interface",
+      "description": "core/ must not import from spi/ (L2 peers must not depend on each other)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.6951
+    },
+    {
+      "id": 62,
+      "category": "workspace",
+      "description": "main/{subdir}/ directory exists (workspace projects)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 63,
+      "category": "workspace",
+      "description": "Each workspace member has Cargo.toml",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 64,
+      "category": "workspace",
+      "description": "Each workspace member has src/ directory",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 65,
+      "category": "workspace",
+      "description": "Each workspace member has src/lib.rs or src/main.rs",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 66,
+      "category": "scripts",
+      "description": "scripts/ci/ directory exists (if scripts/ present)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 66,
+            "path": "scripts/ci",
+            "message": "scripts/ exists but scripts/ci/ subdirectory is missing",
+            "severity": "warning",
+            "rule_type": "builtin:scripts_ci_dir_exists",
+            "expected": "scripts/ci/",
+            "actual": "missing",
+            "fix_hint": "Create scripts/ci/ for CI pipeline scripts",
+            "remediation_strategy": "declarative"
+          }
+        ]
+      }
+    },
+    {
+      "id": 67,
+      "category": "scripts",
+      "description": "scripts/ci/build.sh exists (if scripts/ci/ present)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 68,
+      "category": "scripts",
+      "description": "scripts/ci/test.sh exists (if scripts/ci/ present)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 69,
+      "category": "scripts",
+      "description": "scripts/ci/lint.sh exists (if scripts/ci/ present)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 70,
+      "category": "workspace",
+      "description": "Multi-feature workspace must not have [package] at root",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 71,
+      "category": "structure",
+      "description": "Root contains only allowed entries (whitelist enforcement)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 75,
+      "category": "structure",
+      "description": "bootstrap.ps1 or build.ps1 exists at root (Windows)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 75,
+            "path": "bootstrap.ps1",
+            "message": "Neither bootstrap.ps1 nor build.ps1 exists at project root",
+            "severity": "error",
+            "rule_type": "builtin:bootstrap_ps1_exists",
+            "expected": "bootstrap.ps1 or build.ps1",
+            "actual": "missing",
+            "fix_hint": "Create bootstrap.ps1 (preferred) or build.ps1 for Windows setup",
+            "remediation_strategy": "declarative"
+          }
+        ]
+      }
+    },
+    {
+      "id": 76,
+      "category": "structure",
+      "description": "docs/ directory exists at root",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.1241
+    },
+    {
+      "id": 77,
+      "category": "test_org",
+      "description": "All public functions have corresponding tests (name-based)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 78,
+      "category": "test_org",
+      "description": "Tests use @covers: annotation for explicit 1:1 function linking",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 79,
+      "category": "naming",
+      "description": "Trait names must be singular (not plural)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 81,
+      "category": "interface",
+      "description": "Reports deprecated trait definitions in api/traits.rs for tracking",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 82,
+      "category": "workspace",
+      "description": "Workspace members with SEA layers (api/ or spi/) must have tests/ directory",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 83,
+      "category": "workspace",
+      "description": "Workspace members with spi/ must have *_int_test.rs and *_security_test.rs files",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 83,
+            "path": "main/features/core",
+            "message": "Workspace member 'main/features/core' has spi/ but no *_int_test.rs or *_integration_test.rs files",
+            "severity": "error",
+            "rule_type": "builtin:workspace_members_have_int_tests",
+            "expected": "main/features/core/tests/*_int_test.rs",
+            "actual": "no integration test files",
+            "fix_hint": "Create integration tests in main/features/core/tests/ — spi/ indicates external dependencies",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 83,
+            "path": "main/features/core",
+            "message": "Workspace member 'main/features/core' has spi/ but no *_security_test.rs files",
+            "severity": "error",
+            "rule_type": "builtin:workspace_members_have_int_tests",
+            "expected": "main/features/core/tests/*_security_test.rs",
+            "actual": "no security test files",
+            "fix_hint": "Create security tests in main/features/core/tests/ — spi/ introduces security risks that must be tested",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 83,
+            "path": "main/features/nix",
+            "message": "Workspace member 'main/features/nix' has spi/ but no *_int_test.rs or *_integration_test.rs files",
+            "severity": "error",
+            "rule_type": "builtin:workspace_members_have_int_tests",
+            "expected": "main/features/nix/tests/*_int_test.rs",
+            "actual": "no integration test files",
+            "fix_hint": "Create integration tests in main/features/nix/tests/ — spi/ indicates external dependencies",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 83,
+            "path": "main/features/nix",
+            "message": "Workspace member 'main/features/nix' has spi/ but no *_security_test.rs files",
+            "severity": "error",
+            "rule_type": "builtin:workspace_members_have_int_tests",
+            "expected": "main/features/nix/tests/*_security_test.rs",
+            "actual": "no security test files",
+            "fix_hint": "Create security tests in main/features/nix/tests/ — spi/ introduces security risks that must be tested",
+            "remediation_strategy": "manual"
+          }
+        ]
+      }
+    },
+    {
+      "id": 84,
+      "category": "workspace",
+      "description": "Tests must only import external crates via saf/ (test domain isolation)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 84,
+            "path": "main\\features\\core\\tests\\safe_path_join_test.rs",
+            "message": "Test imports internal layer 'swe_justpkg_core::api::traits::safe_path_join' of external crate",
+            "severity": "error",
+            "rule_type": "builtin:test_domain_isolation",
+            "expected": "use swe_justpkg_core::* (via saf)",
+            "actual": "use swe_justpkg_core::api::traits::safe_path_join",
+            "fix_hint": "Import via public facade: `use swe_justpkg_core::*` instead of internal layer",
+            "remediation_strategy": "manual"
+          }
+        ]
+      }
+    },
+    {
+      "id": 85,
+      "category": "workspace",
+      "description": "Workspace root should not have tests/ directory (tests belong in member crates)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.1046
+    },
+    {
+      "id": 86,
+      "category": "interface",
+      "description": "core/ must not define traits (L3 contains implementations only)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 2.2046
+    },
+    {
+      "id": 87,
+      "category": "interface",
+      "description": "SEA layer directories must not contain crates (no Cargo.toml inside api/, core/, saf/, spi/)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 87,
+            "path": "main\\features\\core\\Cargo.toml",
+            "message": "Crate found inside 'core/' directory at 'main\\features\\core\\Cargo.toml' — move crates outside directories named after SEA layers",
+            "severity": "error",
+            "rule_type": "builtin:sea_layers_no_crates",
+            "expected": "No Cargo.toml in directories named after SEA layers",
+            "actual": "main\\features\\core\\Cargo.toml",
+            "fix_hint": "SEA layers (api/, core/, saf/, spi/) are internal crate structure, not workspace directories; move crates outside these directories",
+            "remediation_strategy": "manual"
+          }
+        ]
+      }
+    },
+    {
+      "id": 89,
+      "category": "naming",
+      "description": "Core module filenames must match their primary struct/trait name (with suffix tolerance)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 90,
+      "category": "naming",
+      "description": "Types in core modules must be name-cohesive (SRP enforcement)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 91,
+      "category": "naming",
+      "description": "Suggest Builder pattern for complex structs (advisory)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 94,
+      "category": "test_org",
+      "description": "Integration tests must not use mocking libraries or mock types",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 95,
+      "category": "test_org",
+      "description": "Dependencies used in src/ must have integration or e2e test coverage",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 96,
+      "category": "hygiene",
+      "description": "Dependencies declared in Cargo.toml must be used in src/",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 97,
+      "category": "hygiene",
+      "description": "CLI projects should use dirs/directories crate for XDG-compliant paths",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 98,
+      "category": "hygiene",
+      "description": "No hardcoded home directory paths in source code",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 99,
+      "category": "test_org",
+      "description": "Test files use suffixes consistent with dependency scope (allowing integration-style *_int_test.rs / *_e2e_test.rs in tests/)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 99,
+            "path": "main\\features\\core\\tests\\safe_path_join_test.rs",
+            "message": "Test file 'safe_path_join_test.rs' has dependency scope 'integration test (imports from external crates)' but uses suffix '_test.rs'",
+            "severity": "warning",
+            "rule_type": "builtin:test_location_by_deps",
+            "expected": "_int_test.rs",
+            "actual": "_test.rs",
+            "fix_hint": "Rename to use '_int_test.rs' suffix, or adjust imports to match current suffix",
+            "remediation_strategy": "manual"
+          }
+        ]
+      }
+    },
+    {
+      "id": 100,
+      "category": "workspace",
+      "description": "Workspace members under gateway/output/ must have *_int_test.rs files",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 103,
+      "category": "gateway_isolation",
+      "description": "lib.rs must declare gateway as a private module — pub mod and pub(crate) mod are forbidden",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.0342
+    },
+    {
+      "id": 107,
+      "category": "workspace",
+      "description": "In dual workspace layouts, innermost crates must be members of the root workspace (not the inner workspace as a member)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 108,
+      "category": "code_organization",
+      "description": "Each public struct/trait/enum must have its own .rs file (one primary type per file)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 109,
+      "category": "code_organization",
+      "description": "Rust source file names must be nouns (no verb or assertion names like check_exists.rs)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 110,
+      "category": "code_organization",
+      "description": "mod.rs must contain only module declarations and re-exports — no struct/impl/fn logic",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 111,
+      "category": "code_organization",
+      "description": "No loose .rs files directly under src/core/ — all code must live in subfolders",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 112,
+      "category": "code_organization",
+      "description": "Sibling files sharing a common prefix must be grouped into a subdirectory module (e.g., check_runner.rs + check_result.rs → check/runner.rs + check/result.rs)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 113,
+      "category": "interface",
+      "description": "Every core/ struct with pub/pub(crate) methods must implement a trait defined in api/ (program to the interface)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 114,
+      "category": "interface",
+      "description": "core/ must not import from spi/ — depend on api/ traits, receive implementations via DI from saf/",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.9169
+    },
+    {
+      "id": 115,
+      "category": "interface",
+      "description": "core/ must not import from gateway/ — depend on api/ traits, receive implementations via DI from saf/",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.8853
+    },
+    {
+      "id": 116,
+      "category": "interface",
+      "description": "api/ must not import from core/ — api/ defines abstractions, it must not depend on implementations",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.2669000000000001
+    },
+    {
+      "id": 117,
+      "category": "interface",
+      "description": "api/ must not import from spi/ — api/ defines abstractions, it must not depend on implementations",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 3.2924
+    },
+    {
+      "id": 118,
+      "category": "interface",
+      "description": "api/ must not import from gateway/ — api/ defines abstractions, it must not depend on implementations",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.1827999999999999
+    },
+    {
+      "id": 119,
+      "category": "interface",
+      "description": "gateway/ must not import from spi/ — gateway/ depends on saf/ only, not on SPI implementations",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.9307
+    },
+    {
+      "id": 120,
+      "category": "test_org",
+      "description": "Each source file in SEA layers has coverage via inline tests, a matching test file, or a layer-level test file in tests/ — reports per-layer coverage",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 120,
+            "path": null,
+            "message": "Structural test coverage is 0% (0/10 source files covered), minimum is 80%. Per-layer: [api=0%(0/6), spi=0%(0/4)]",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": ">=80% coverage",
+            "actual": "0% coverage",
+            "fix_hint": "Add test files for uncovered source modules",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\core\\src\\api\\error.rs",
+            "message": "[api] Source file 'main/features/core/src/api/error.rs' has no corresponding test file in main/features/core/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "error_test.rs or error_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/core/tests/error_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\core\\src\\api\\traits.rs",
+            "message": "[api] Source file 'main/features/core/src/api/traits.rs' has no corresponding test file in main/features/core/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "traits_test.rs or traits_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/core/tests/traits_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\core\\src\\api\\types.rs",
+            "message": "[api] Source file 'main/features/core/src/api/types.rs' has no corresponding test file in main/features/core/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "types_test.rs or types_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/core/tests/types_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\core\\src\\spi\\ureq_client.rs",
+            "message": "[spi] Source file 'main/features/core/src/spi/ureq_client.rs' has no corresponding test file in main/features/core/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "ureq_client_test.rs or ureq_client_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/core/tests/ureq_client_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\nix\\src\\api\\error.rs",
+            "message": "[api] Source file 'main/features/nix/src/api/error.rs' has no corresponding test file in main/features/nix/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "error_test.rs or error_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/nix/tests/error_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\nix\\src\\api\\flake_lock.rs",
+            "message": "[api] Source file 'main/features/nix/src/api/flake_lock.rs' has no corresponding test file in main/features/nix/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "flake_lock_test.rs or flake_lock_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/nix/tests/flake_lock_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\nix\\src\\api\\narinfo.rs",
+            "message": "[api] Source file 'main/features/nix/src/api/narinfo.rs' has no corresponding test file in main/features/nix/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "narinfo_test.rs or narinfo_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/nix/tests/narinfo_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\nix\\src\\spi\\fetcher.rs",
+            "message": "[spi] Source file 'main/features/nix/src/spi/fetcher.rs' has no corresponding test file in main/features/nix/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "fetcher_test.rs or fetcher_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/nix/tests/fetcher_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\nix\\src\\spi\\nar.rs",
+            "message": "[spi] Source file 'main/features/nix/src/spi/nar.rs' has no corresponding test file in main/features/nix/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "nar_test.rs or nar_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/nix/tests/nar_test.rs`",
+            "remediation_strategy": "manual"
+          },
+          {
+            "check_id": 120,
+            "path": "main\\features\\nix\\src\\spi\\nix_hash.rs",
+            "message": "[spi] Source file 'main/features/nix/src/spi/nix_hash.rs' has no corresponding test file in main/features/nix/tests",
+            "severity": "warning",
+            "rule_type": "builtin:sea_layer_test_coverage",
+            "expected": "nix_hash_test.rs or nix_hash_int_test.rs",
+            "actual": "no matching test file found",
+            "fix_hint": "Create a test file like `main/features/nix/tests/nix_hash_test.rs`",
+            "remediation_strategy": "manual"
+          }
+        ]
+      }
+    },
+    {
+      "id": 121,
+      "category": "structure",
+      "description": "Every {implementation_layer}/ submodule must have a corresponding {interface_layer}/ submodule defining its types or traits",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 122,
+      "category": "interface",
+      "description": "Config struct methods must be pub(crate), not pub — configs are not for public consumption",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 123,
+      "category": "naming",
+      "description": "Module name must not prefix the struct/trait name (e.g., config::Config not config::ConfigConfig)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 124,
+      "category": "test_org",
+      "description": "Every pub/pub(crate) fn in core/ must have an inline unit test (#[cfg(test)] block with #[test])",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 125,
+      "category": "test_org",
+      "description": "Every pub fn in saf/ must have corresponding public-API test coverage (_e2e_test.rs, _int_test.rs, or a layer-level saf_* test)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 126,
+      "category": "interface",
+      "description": "saf/ must not re-export traits via pub use — wrap trait methods as standalone functions instead",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 3.2101
+    },
+    {
+      "id": 127,
+      "category": "workspace",
+      "description": "Workspace root should not have config/ directory (config belongs under main/)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.0569
+    },
+    {
+      "id": 128,
+      "category": "workspace",
+      "description": "Workspace root should not have scripts/ directory (scripts belongs under main/)",
+      "result": {
+        "status": "fail",
+        "violations": [
+          {
+            "check_id": 128,
+            "path": "scripts",
+            "message": "Workspace root has scripts/ directory — scripts should be at main/scripts/",
+            "severity": "error",
+            "rule_type": "dir_not_exists",
+            "expected": "absent",
+            "actual": "scripts",
+            "fix_hint": "Move scripts/ to main/scripts/",
+            "remediation_strategy": "manual"
+          }
+        ]
+      },
+      "duration_ms": 0.0984
+    },
+    {
+      "id": 129,
+      "category": "workspace",
+      "description": "Workspace root should not have examples/ directory (examples belongs under main/)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 0.036199999999999996
+    },
+    {
+      "id": 130,
+      "category": "structure",
+      "description": "Root must not have both build and bootstrap scripts",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 134,
+      "category": "interface",
+      "description": "core/ must not import from saf/ — core/ depends only on api/ traits",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.1175
+    },
+    {
+      "id": 135,
+      "category": "interface",
+      "description": "spi/ must not import from gateway/ — spi/ implements api/ traits only",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.5005000000000002
+    },
+    {
+      "id": 136,
+      "category": "interface",
+      "description": "gateway/ must not import from core/ — gateway/ calls saf/, not core/ directly",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.0986
+    },
+    {
+      "id": 137,
+      "category": "interface",
+      "description": "saf/ must not import from gateway/ — gateway/ calls saf/, not the reverse",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 1.3964999999999999
+    },
+    {
+      "id": 138,
+      "category": "naming",
+      "description": "Directory names under src/ must use snake_case",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 139,
+      "category": "shim_detection",
+      "description": "SEA layer files must contain substantive code (not just comments or empty re-exports)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 140,
+      "category": "shim_detection",
+      "description": "lib.rs must be a real entry point, not a shim with only re-exports",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 141,
+      "category": "shim_detection",
+      "description": "SEA layer mod.rs must not be a crate-level re-export shim",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 142,
+      "category": "shim_detection",
+      "description": "SEA layer directories must meet minimum LOC threshold (api/>10, core/>20, saf/>5)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 143,
+      "category": "shim_detection",
+      "description": "[lib] and [[bin]] paths must point inside src/",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 144,
+      "category": "shim_detection",
+      "description": "Non-standard [lib] path with src/ present suggests shim directory",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 145,
+      "category": "interface",
+      "description": "Free functions in saf/ or core/ taking an api-defined type as parameter should be methods on that type",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 146,
+      "category": "naming",
+      "description": "Package name must not use SEA layer suffixes as defined in sea_layers config",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 147,
+      "category": "workspace",
+      "description": "Workspace root Cargo.toml must not contain [package] — workspace roots must be virtual",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 148,
+      "category": "workspace",
+      "description": "Crate name must not duplicate any other crate name or module name in the same workspace",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 149,
+      "category": "test_org",
+      "description": "Test file prefix must match a source module name, optionally followed by a pub fn name",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 150,
+      "category": "hygiene",
+      "description": "Weak filesystem patterns — code that produces host-dependent paths (MAIN_SEPARATOR, hardcoded \\\\, replace-hacks, literal backslashes)",
+      "result": {
+        "status": "pass"
+      },
+      "duration_ms": 4.4562
+    },
+    {
+      "id": 156,
+      "category": "workspace",
+      "description": "Workspace member paths and crate names must not contain duplicate segments (design smell)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 157,
+      "category": "workspace",
+      "description": "Same directory basename must not appear at multiple paths under workspace_layout (detects orphaned legacy duplication)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 158,
+      "category": "test_org",
+      "description": "Test functions must not be placeholders (panic!/todo!/unimplemented!/unreachable!/empty body)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 159,
+      "category": "interface",
+      "description": "saf/ public function signatures must not name types from core/ (signature leak)",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 162,
+      "category": "code_organization",
+      "description": "lib.rs must contain only module declarations and re-exports — no struct/impl/fn/const definitions",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 166,
+      "category": "workspace",
+      "description": "Every crate directory with a Cargo.toml under the workspace root must be listed in [workspace].members",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 167,
+      "category": "structure",
+      "description": "Only one architecture.toml location is allowed: either architecture.toml at root or main/config/architecture.toml, not both",
+      "result": {
+        "status": "pass"
+      }
+    },
+    {
+      "id": 168,
+      "category": "structure",
+      "description": "architecture.toml `layout` field must match the layout implied by Cargo.toml",
+      "result": {
+        "status": "pass"
+      }
+    }
+  ],
+  "summary": {
+    "total": 125,
+    "passed": 112,
+    "failed": 13,
+    "skipped": 0,
+    "duration_ms": 124.4114
+  },
+  "project_layout": "workspace",
+  "application_type": "lib"
+}

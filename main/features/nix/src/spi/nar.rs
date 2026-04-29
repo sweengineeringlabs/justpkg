@@ -9,7 +9,7 @@
 use std::io::Read;
 use std::path::Path;
 
-use justpkg_core::api::traits::safe_path_join;
+use justpkg_pkg::safe_path_join;
 use crate::api::error::NixFetchError;
 
 const NAR_MAGIC: &str = "nix-archive-1";
