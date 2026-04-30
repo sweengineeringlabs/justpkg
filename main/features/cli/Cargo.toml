@@ -10,7 +10,7 @@ rust-version.workspace = true
 description = "justpkg — Nix NAR fetcher and extractor CLI"
 
 [[bin]]
-name = "justpkg"
+name = "pkg"
 path = "src/main.rs"
 
 [dependencies]

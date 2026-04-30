@@ -79,27 +79,40 @@ fn read_regular<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
                 let len = u64::from_le_bytes(len_buf) as usize;
                 let padded = (len + 7) & !7;
 
+                let mut buf = vec![0u8; padded];
+                r.read_exact(&mut buf)
+                    .map_err(|e| NixFetchError::NarExtract(format!("read contents: {e}")))?;
+
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent)
                         .map_err(|e| NixFetchError::NarExtract(format!("mkdir {parent:?}: {e}")))?;
                 }
 
-                let mut file = std::fs::File::create(path)
-                    .map_err(|e| NixFetchError::NarExtract(format!("create {path:?}: {e}")))?;
+                match std::fs::File::create(path) {
+                    Ok(mut file) => {
+                        use std::io::Write;
+                        file.write_all(&buf[..len])
+                            .map_err(|e| NixFetchError::NarExtract(format!("write {path:?}: {e}")))?;
 
-                let mut buf = vec![0u8; padded];
-                r.read_exact(&mut buf)
-                    .map_err(|e| NixFetchError::NarExtract(format!("read contents: {e}")))?;
-
-                use std::io::Write;
-                file.write_all(&buf[..len])
-                    .map_err(|e| NixFetchError::NarExtract(format!("write {path:?}: {e}")))?;
-
-                #[cfg(unix)]
-                if executable {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-                        .map_err(|e| NixFetchError::NarExtract(format!("chmod {path:?}: {e}")))?;
+                        #[cfg(unix)]
+                        if executable {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+                                .map_err(|e| NixFetchError::NarExtract(format!("chmod {path:?}: {e}")))?;
+                        }
+                    }
+                    #[cfg(windows)]
+                    Err(e) if e.raw_os_error() == Some(123) => {
+                        // ERROR_INVALID_NAME: the filename is valid on Linux but not on Windows
+                        // (e.g. a name that matches a Windows device name in the terminfo db,
+                        // or a path with characters Windows rejects). The file will be absent
+                        // from the host tree and therefore absent from the ext4 image; this is
+                        // acceptable for terminal data that the guest workload doesn't need.
+                        eprintln!("  warn: skipping {path:?} (name not representable on Windows)");
+                    }
+                    Err(e) => {
+                        return Err(NixFetchError::NarExtract(format!("create {path:?}: {e}")));
+                    }
                 }
             }
             ")" => return Ok(()),
@@ -148,9 +161,10 @@ fn read_symlink<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
         .map_err(|e| NixFetchError::NarExtract(format!("symlink {path:?} -> {_target}: {e}")))?;
 
     // On Windows, try real symlinks first (works with Developer Mode on Windows 10+).
-    // Fall back to a text stub only if both file and directory symlinks fail — this
-    // preserves the image build path (build-from-tree treats stubs as regular files,
-    // which breaks ELF verification).
+    // Fall back to a text stub if real symlinks fail.  If even the text stub fails
+    // (e.g. ERROR_INVALID_NAME for a filename that's valid on Linux but not Windows),
+    // skip the symlink with a warning — build-from-tree does not pack symlinks into
+    // the ext4 image anyway, so missing stubs do not affect the guest image.
     #[cfg(windows)]
     {
         use std::os::windows::fs::{symlink_dir, symlink_file};
@@ -165,10 +179,17 @@ fn read_symlink<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
 
         if !created {
             use std::io::Write;
-            let mut f = std::fs::File::create(path)
-                .map_err(|e| NixFetchError::NarExtract(format!("create symlink stub: {e}")))?;
-            writeln!(f, "{_target}")
-                .map_err(|e| NixFetchError::NarExtract(format!("write symlink stub: {e}")))?;
+            match std::fs::File::create(path) {
+                Ok(mut f) => {
+                    writeln!(f, "{_target}")
+                        .map_err(|e| NixFetchError::NarExtract(format!("write symlink stub: {e}")))?;
+                }
+                Err(_) => {
+                    // Path is invalid on Windows (e.g. reserved device name, illegal char).
+                    // Symlinks are not packed by build-from-tree; skip silently.
+                    eprintln!("  warn: skipping symlink {:?} -> {_target} (not representable on Windows)", path);
+                }
+            }
         }
     }
 

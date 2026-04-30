@@ -90,3 +90,41 @@ impl NarInfo {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_NARINFO: &str = "\
+StorePath: /nix/store/9ap0znk8zci1j8cp06wysciy253yxk7c-redis-7.2.7
+URL: nar/0v7r3pkgfzakwasv63g7rqni9n51bdq3qz9qhpgd4c2y3wpgp2j3.nar.xz
+Compression: xz
+FileHash: sha256:0v7r3pkgfzakwasv63g7rqni9n51bdq3qz9qhpgd4c2y3wpgp2j3
+FileSize: 1234567
+NarHash: sha256:1r4lm8a0g1w5kq1mnxcp3qiw15ynx2r3zzp1bqxvv6bwb2k7h20q
+NarSize: 9876543
+References: 5m9amsvvh2z8sl7jrnc87hzy21glw6k1-glibc-2.40-66 9ap0znk8zci1j8cp06wysciy253yxk7c-redis-7.2.7
+";
+
+    #[test]
+    fn test_parse_narinfo_references_are_bare_basenames() {
+        // narinfo References: field is space-separated basenames without /nix/store/ prefix.
+        // Callers that strip_prefix("/nix/store/") will get None and silently skip the dep
+        // unless they also handle the bare-basename case. This test captures that contract.
+        let ni = NarInfo::parse("9ap0znk8zci1j8cp06wysciy253yxk7c", SAMPLE_NARINFO).unwrap();
+        assert_eq!(ni.references.len(), 2);
+        assert_eq!(ni.references[0], "5m9amsvvh2z8sl7jrnc87hzy21glw6k1-glibc-2.40-66");
+        assert_eq!(ni.references[1], "9ap0znk8zci1j8cp06wysciy253yxk7c-redis-7.2.7");
+        // Must NOT have /nix/store/ prefix
+        assert!(!ni.references[0].starts_with("/nix/store/"),
+            "References must be bare basenames, not full store paths");
+    }
+
+    #[test]
+    fn test_parse_narinfo_empty_references() {
+        let text = "StorePath: /nix/store/abc-pkg\nURL: nar/x.nar.xz\nCompression: xz\n\
+                    FileHash: sha256:abc\nFileSize: 1\nNarHash: sha256:def\nNarSize: 2\nReferences: \n";
+        let ni = NarInfo::parse("abc", text).unwrap();
+        assert!(ni.references.is_empty(), "empty References: line must produce empty Vec");
+    }
+}

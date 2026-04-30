@@ -200,13 +200,12 @@ impl<'a> NixFetcher<'a> {
             extract_nar(std::io::Cursor::new(uncompressed), &extract_path)?;
         }
 
-        // Recursively fetch all transitive dependencies
-        for dep_path in &narinfo.references {
-            if let Some(basename) = dep_path.strip_prefix("/nix/store/") {
-                // Store hash is the Nix-base32 prefix before the first hyphen
-                if let Some((dep_hash, _)) = basename.split_once('-') {
-                    self.build_with_closure(dep_hash, dest_dir, visited)?;
-                }
+        // Recursively fetch all transitive dependencies.
+        // References are bare basenames ("hash-name-ver"), not full /nix/store/ paths.
+        for dep in &narinfo.references {
+            let basename = dep.strip_prefix("/nix/store/").unwrap_or(dep);
+            if let Some((dep_hash, _)) = basename.split_once('-') {
+                self.build_with_closure(dep_hash, dest_dir, visited)?;
             }
         }
 
@@ -326,6 +325,8 @@ mod tests {
 mod tests_build_store_path {
     use super::*;
     use justpkg_pkg::JustpkgError;
+    use std::collections::HashSet;
+    use std::sync::{Arc, Mutex};
 
     struct PanicClient;
     impl HttpClient for PanicClient {
@@ -358,6 +359,113 @@ mod tests_build_store_path {
         assert!(
             matches!(err, NixFetchError::NarExtract(_)),
             "must reject paths missing the hash-name hyphen separator, got: {err:?}"
+        );
+    }
+
+    // Two-node graph: "redis" (aaaa…) references "glibc" (bbbb…).
+    // The client returns narinfo for each hash and a trivial 1-byte NAR for the
+    // actual download.  build_with_closure must visit BOTH hashes — the bug was
+    // that References were bare basenames so strip_prefix("/nix/store/") returned
+    // None and the dep loop was a no-op.
+    struct ClosureClient {
+        fetched: Arc<Mutex<HashSet<String>>>,
+    }
+    impl ClosureClient {
+        fn new() -> Self { Self { fetched: Arc::new(Mutex::new(HashSet::new())) } }
+    }
+
+    // A minimal valid NAR: "(" type regular contents "" ")"
+    // Length-prefixed strings, 8-byte LE, padded to 8 bytes.
+    fn minimal_nar() -> Vec<u8> {
+        fn encode(s: &str) -> Vec<u8> {
+            let len = s.len() as u64;
+            let padded = (len as usize + 7) & !7;
+            let mut v = len.to_le_bytes().to_vec();
+            v.extend_from_slice(s.as_bytes());
+            v.resize(8 + padded, 0);
+            v
+        }
+        let magic = "nix-archive-1";
+        let mut out = Vec::new();
+        out.extend(encode(magic));
+        out.extend(encode("("));
+        out.extend(encode("type"));
+        out.extend(encode("regular"));
+        // contents: empty
+        out.extend(encode("contents"));
+        out.extend(0u64.to_le_bytes()); // 0-byte body
+        out.extend(encode(")"));
+        out
+    }
+
+    impl HttpClient for ClosureClient {
+        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, JustpkgError> {
+            // narinfo requests: /<hash>.narinfo
+            let hash = url.split('/').last().unwrap().trim_end_matches(".narinfo").to_string();
+            self.fetched.lock().unwrap().insert(format!("narinfo:{hash}"));
+
+            let (store_basename, references) = if hash.starts_with('a') {
+                ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-redis-7.2.7",
+                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-glibc-2.40-66")
+            } else {
+                ("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-glibc-2.40-66", "")
+            };
+
+            // Build a real compressed NAR so decompression + hash verification don't fail.
+            // We use Compression: none to skip decompression complexity.
+            let nar_bytes = minimal_nar();
+            let nar_hash_bytes: Vec<u8> = {
+                use sha2::Digest as _;
+                sha2::Sha256::digest(&nar_bytes).to_vec()
+            };
+            use crate::spi::nix_hash::nix_base32_encode;
+            let nar_hash = nix_base32_encode(&nar_hash_bytes);
+            let file_hash = hex::encode(&nar_hash_bytes);
+
+            let narinfo = format!(
+                "StorePath: /nix/store/{store_basename}\n\
+                 URL: nar/{hash}.nar\n\
+                 Compression: none\n\
+                 FileHash: sha256:{file_hash}\n\
+                 FileSize: {file_size}\n\
+                 NarHash: sha256:{nar_hash}\n\
+                 NarSize: {nar_size}\n\
+                 References: {references}\n",
+                file_size = nar_bytes.len(),
+                nar_size = nar_bytes.len(),
+            );
+            Ok(narinfo.into_bytes())
+        }
+
+        fn get_stream(&self, url: &str, out: &mut dyn std::io::Write) -> Result<u64, JustpkgError> {
+            // NAR download requests: /nar/<hash>.nar
+            let hash = url.split('/').last().unwrap().trim_end_matches(".nar").to_string();
+            self.fetched.lock().unwrap().insert(format!("nar:{hash}"));
+            let nar = minimal_nar();
+            let n = nar.len() as u64;
+            out.write_all(&nar).map_err(|e| JustpkgError::Io(e))?;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn test_build_with_closure_fetches_transitive_deps_via_bare_basename_references() {
+        // Regression test: build_with_closure previously silently skipped References
+        // because they are bare basenames ("hash-name") and the code did
+        // strip_prefix("/nix/store/") which always returned None.
+        let client = ClosureClient::new();
+        let dest = tempfile::TempDir::new().unwrap();
+        let fetcher = NixFetcher { http: &client, cache_base: "http://cache" };
+
+        fetcher.build_store_path(
+            "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-redis-7.2.7",
+            dest.path(),
+        ).expect("build_store_path must succeed");
+
+        let fetched = client.fetched.lock().unwrap().clone();
+        assert!(
+            fetched.iter().any(|s| s.contains("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")),
+            "glibc (transitive dep via bare basename reference) must be fetched; got: {fetched:?}"
         );
     }
 }
