@@ -5,6 +5,28 @@ use super::error::JustpkgError;
 pub trait HttpClient: Send + Sync {
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, JustpkgError>;
     fn get_stream(&self, url: &str, dest: &mut dyn std::io::Write) -> Result<u64, JustpkgError>;
+
+    /// Like `get_bytes` but adds `Authorization: Bearer <token>` when `token` is `Some`.
+    ///
+    /// The default implementation ignores `token` and delegates to `get_bytes`.
+    /// Override this to support authenticated caches (Attic, Cachix private).
+    fn get_bytes_auth(&self, url: &str, token: Option<&str>) -> Result<Vec<u8>, JustpkgError> {
+        let _ = token;
+        self.get_bytes(url)
+    }
+
+    /// Like `get_stream` but adds `Authorization: Bearer <token>` when `token` is `Some`.
+    ///
+    /// The default implementation ignores `token` and delegates to `get_stream`.
+    fn get_stream_auth(
+        &self,
+        url: &str,
+        token: Option<&str>,
+        dest: &mut dyn std::io::Write,
+    ) -> Result<u64, JustpkgError> {
+        let _ = token;
+        self.get_stream(url, dest)
+    }
 }
 
 /// Verifies that `path` is safely joinable onto `base` — no `..`,

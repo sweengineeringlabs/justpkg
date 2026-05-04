@@ -13,4 +13,10 @@ pub enum VminitInstallError {
         name: String,
         source: justpkg_nix::NixFetchError,
     },
+
+    #[error("root layout generation failed: {reason}: {source}")]
+    RootLayoutFailed {
+        reason: String,
+        source: std::io::Error,
+    },
 }

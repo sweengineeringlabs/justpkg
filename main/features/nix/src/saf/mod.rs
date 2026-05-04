@@ -1,4 +1,4 @@
-pub use crate::api::error::NixFetchError;
+pub use crate::api::error::{is_not_found, NixFetchError};
 pub use crate::api::flake_lock::{FlakeLock, LockedNode};
 pub use crate::api::narinfo::NarInfo;
 pub use crate::spi::fetcher::NixFetcher;

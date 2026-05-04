@@ -20,6 +20,9 @@ pub struct NixFetcher<'a> {
     /// Loaded from `application.toml` by the caller; use
     /// `swe_justpkg_nix::DEFAULT_CACHE_BASE` when no config is available.
     pub cache_base: &'a str,
+    /// Bearer token for authenticated caches (Attic, Cachix private).
+    /// When `Some`, requests carry `Authorization: Bearer <token>`.
+    pub token: Option<&'a str>,
 }
 
 impl<'a> NixFetcher<'a> {
@@ -54,7 +57,7 @@ impl<'a> NixFetcher<'a> {
             let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
 
             let mut compressed_bytes = Vec::new();
-            self.http.get_stream(&nar_url, &mut compressed_bytes)?;
+            self.http.get_stream_auth(&nar_url, self.token, &mut compressed_bytes)?;
 
             let digest = cas
                 .put(&compressed_bytes)
@@ -133,7 +136,16 @@ impl<'a> NixFetcher<'a> {
 
     fn fetch_narinfo_by_store_hash(&self, store_hash: &str) -> Result<NarInfo, NixFetchError> {
         let narinfo_url = format!("{}/{store_hash}.narinfo", self.cache_base);
-        let narinfo_bytes = self.http.get_bytes(&narinfo_url)?;
+        let narinfo_bytes = self.http.get_bytes_auth(&narinfo_url, self.token).map_err(|e| {
+            // Translate HTTP 404 to NotFound so callers can implement substituter fallback.
+            if let justpkg_pkg::JustpkgError::Http { status: 404, .. } = &e {
+                return NixFetchError::NotFound {
+                    cache: self.cache_base.to_string(),
+                    store_hash: store_hash.to_string(),
+                };
+            }
+            NixFetchError::Core(e)
+        })?;
         let narinfo_text =
             String::from_utf8(narinfo_bytes).map_err(|e| NixFetchError::NarInfoParse {
                 hash: store_hash.to_string(),
@@ -184,7 +196,7 @@ impl<'a> NixFetcher<'a> {
         if !extract_path.exists() {
             let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
             let mut compressed = Vec::new();
-            self.http.get_stream(&nar_url, &mut compressed)?;
+            self.http.get_stream_auth(&nar_url, self.token, &mut compressed)?;
             let uncompressed =
                 decompress(&narinfo.compression, &compressed).map_err(NixFetchError::NarExtract)?;
             verify_nar_hash(&uncompressed, &narinfo.nar_hash)?;
@@ -218,7 +230,7 @@ impl<'a> NixFetcher<'a> {
         // Using sri_to_hex directly as the URL was wrong (issue #80).
         let store_hash = nix_hash::nar_hash_to_store_path_hash(sri)?;
         let narinfo_url = format!("{}/{store_hash}.narinfo", self.cache_base);
-        let narinfo_bytes = self.http.get_bytes(&narinfo_url)?;
+        let narinfo_bytes = self.http.get_bytes_auth(&narinfo_url, self.token)?;
         let narinfo_text =
             String::from_utf8(narinfo_bytes).map_err(|e| NixFetchError::NarInfoParse {
                 hash: store_hash.clone(),
@@ -340,7 +352,7 @@ mod tests_build_store_path {
 
     #[test]
     fn test_build_store_path_rejects_path_without_nix_store_prefix() {
-        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org" };
+        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org", token: None };
         let err = fetcher
             .build_store_path("/usr/local/abc123-curl-8.0", std::path::Path::new("/dest"))
             .unwrap_err();
@@ -352,7 +364,7 @@ mod tests_build_store_path {
 
     #[test]
     fn test_build_store_path_rejects_path_without_hash_separator() {
-        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org" };
+        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org", token: None };
         let err = fetcher
             .build_store_path("/nix/store/nohyphennamehere", std::path::Path::new("/dest"))
             .unwrap_err();
@@ -455,7 +467,7 @@ mod tests_build_store_path {
         // strip_prefix("/nix/store/") which always returned None.
         let client = ClosureClient::new();
         let dest = tempfile::TempDir::new().unwrap();
-        let fetcher = NixFetcher { http: &client, cache_base: "http://cache" };
+        let fetcher = NixFetcher { http: &client, cache_base: "http://cache", token: None };
 
         fetcher.build_store_path(
             "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-redis-7.2.7",

@@ -14,10 +14,11 @@ name = "swe_justpkg_vminit"
 path = "src/lib.rs"
 
 [dependencies]
-justpkg-pkg = { workspace = true }
-justpkg-nix  = { workspace = true }
-serde_json   = { workspace = true }
-thiserror    = { workspace = true }
+justpkg-config = { workspace = true }
+justpkg-pkg    = { workspace = true }
+justpkg-nix    = { workspace = true }
+serde_json     = { workspace = true }
+thiserror      = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

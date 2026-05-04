@@ -1081,6 +1081,7 @@ name = "swe_justpkg_vminit"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "swe_justpkg_config",
  "swe_justpkg_nix",
  "swe_justpkg_pkg",
  "tempfile",

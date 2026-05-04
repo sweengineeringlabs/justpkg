@@ -104,7 +104,7 @@ fn test_build_fails_on_unreachable_cache() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let client = FailingClient;
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
     let result = fetcher.build(&lock, dir.path());
     assert!(result.is_err(), "HTTP failure must propagate as error");
     assert!(matches!(result.unwrap_err(), NixFetchError::Core(_)));
@@ -116,7 +116,7 @@ fn test_build_real_flake_lock_fetches_nar() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let http = UreqClient;
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
     fetcher.build(&lock, dir.path()).unwrap();
 }
 
@@ -222,7 +222,7 @@ fn test_build_zstd_nar_decompresses_and_extracts_correctly() {
     let expected_content = b"zstd test payload";
     let client = ZstdMockClient::new(expected_content);
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     fetcher
         .build(&lock, &dest)
@@ -330,7 +330,7 @@ fn test_build_bzip2_nar_decompresses_and_extracts_correctly() {
     let expected_content = b"bzip2 test payload";
     let client = Bzip2MockClient::new(expected_content);
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     fetcher
         .build(&lock, &dest)
@@ -431,7 +431,7 @@ fn test_fetch_to_cas_stores_compressed_nar_in_cas() {
     let http = NoneCompressionStubClient::new(nar.clone());
     let cas = MemCas::new();
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     let map = fetcher
         .fetch_to_cas(&lock, &cas)
@@ -463,6 +463,7 @@ fn test_fetch_to_cas_propagates_http_error() {
     let fetcher = NixFetcher {
         http: &FailingClient,
         cache_base: DEFAULT_CACHE_BASE,
+        token: None,
     };
 
     let result = fetcher.fetch_to_cas(&lock, &cas);
@@ -488,7 +489,7 @@ fn test_fetch_to_cas_returned_digest_matches_sha256_of_stored_bytes() {
     let http = NoneCompressionStubClient::new(nar);
     let cas_store = MemCas::new();
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     let map = fetcher.fetch_to_cas(&lock, &cas_store).unwrap();
     let actual_digest = map.values().next().unwrap().clone();
@@ -520,7 +521,7 @@ fn test_extract_from_cas_extracts_file_to_dest_dir() {
     cas_store.put(&nar).expect("pre-populate CAS");
 
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
     let parent = tempfile::tempdir().unwrap();
     let dest_dir = parent.path().join("root");
 
@@ -552,7 +553,7 @@ fn test_extract_from_cas_fails_when_blob_absent_from_cas() {
     let http = NoneCompressionStubClient::new(nar);
     let empty_cas = MemCas::new(); // nothing stored — simulates skipped fetch step
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
     let parent = tempfile::tempdir().unwrap();
 
     let result = fetcher.extract_from_cas(&lock, &empty_cas, parent.path());
@@ -622,7 +623,7 @@ fn test_build_extracts_to_nix_store_path_subdir() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let parent = tempfile::tempdir().unwrap();
     let dest = parent.path().join("out");
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     fetcher
         .build(&lock, &dest)
@@ -705,7 +706,7 @@ fn test_build_rejects_tampered_nar_bytes() {
     let client = TamperedNarStub { narinfo_text, corrupted_nar };
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let parent = tempfile::tempdir().unwrap();
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     let result = fetcher.build(&lock, parent.path());
 
@@ -805,7 +806,7 @@ fn test_build_fetches_transitive_dependency() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let parent = tempfile::tempdir().unwrap();
     let dest = parent.path().join("root");
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     fetcher.build(&lock, &dest).expect("build must succeed");
 
@@ -915,7 +916,7 @@ fn test_build_does_not_refetch_already_present_store_path() {
     std::fs::create_dir_all(&pre_existing_path)
         .expect("pre-creating store path directory must succeed");
 
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
     fetcher
         .build(&lock, &dest)
         .expect("build must succeed when top-level store path already exists");
@@ -1065,7 +1066,7 @@ fn test_build_handles_shared_dependency_without_duplicate_fetch() {
         .expect("TWO_NODE_FLAKE_LOCK must parse successfully");
     let parent = tempfile::tempdir().unwrap();
     let dest = parent.path().join("root");
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE };
+    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
 
     fetcher
         .build(&lock, &dest)

@@ -56,6 +56,10 @@ enum Command {
     /// package's NAR closure from the binary cache, and extracts into
     /// <dest-dir>/nix/store/<hash>-<name>.  If no --package flags are given,
     /// all packages in the manifest are installed.
+    ///
+    /// Substituters are tried in order: --substituter flags first, then any
+    /// substituters from application.toml, then cache.nixos.org as final
+    /// fallback.  A 404 from one cache silently advances to the next.
     Install {
         /// Path to manifest.json
         manifest: PathBuf,
@@ -64,6 +68,11 @@ enum Command {
         /// Package names to install (repeatable; default: all in manifest)
         #[arg(long = "package", short = 'p')]
         packages: Vec<String>,
+        /// Binary cache URL to prepend to the substituter list (repeatable).
+        /// Tried before application.toml substituters.
+        /// Example: --substituter https://cache.swe.internal/swe-private
+        #[arg(long = "substituter", short = 's')]
+        substituters: Vec<String>,
     },
 
     /// Verify that every package in a manifest has valid ELF binaries in the ext4 image
@@ -83,7 +92,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = load_config();
     let cache_base = config.nix.cache_base.clone();
-    let channel_base = config.nix.channel_base;
+    let channel_base = config.nix.channel_base.clone();
 
     match cli.command {
         Command::Build {
@@ -94,7 +103,7 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&dest_dir)
                 .with_context(|| format!("create dest dir {:?}", dest_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http, cache_base: &cache_base };
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
             fetcher
                 .build(&lock, &dest_dir)
                 .with_context(|| "NAR fetch/extract failed")?;
@@ -110,7 +119,7 @@ fn main() -> Result<()> {
             let cas =
                 FsCas::new(&cache_dir).with_context(|| format!("open CAS at {:?}", cache_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http, cache_base: &cache_base };
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
             let map = fetcher
                 .fetch_to_cas(&lock, &cas)
                 .with_context(|| "NAR fetch to CAS failed")?;
@@ -133,7 +142,7 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&dest_dir)
                 .with_context(|| format!("create dest dir {:?}", dest_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http, cache_base: &cache_base };
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
             fetcher
                 .extract_from_cas(&lock, &cas, &dest_dir)
                 .with_context(|| "NAR extract from CAS failed")?;
@@ -172,7 +181,7 @@ fn main() -> Result<()> {
             );
         }
 
-        Command::Install { manifest, dest_dir, packages } => {
+        Command::Install { manifest, dest_dir, packages, substituters: sub_flags } => {
             let text = std::fs::read_to_string(&manifest)
                 .with_context(|| format!("read {:?}", manifest))?;
             let pkg_manifest = parse_manifest(&text)
@@ -188,8 +197,17 @@ fn main() -> Result<()> {
                 packages.iter().map(|s| s.as_str()).collect()
             };
 
+            // CLI --substituter flags prepend the config substituter list.
+            // Tokens for private caches must come from application.toml; the CLI
+            // flag accepts URLs only.
+            let mut effective_subs: Vec<justpkg_config::SubstituterConfig> = sub_flags
+                .iter()
+                .map(|u| justpkg_config::SubstituterConfig::new(u))
+                .collect();
+            effective_subs.extend(config.nix.effective_substituters());
+
             let http = UreqClient;
-            let installer = VminitInstaller::new(&http, pkg_manifest);
+            let installer = VminitInstaller::with_substituters(&http, pkg_manifest, effective_subs);
             installer
                 .install(&names, &dest_dir)
                 .with_context(|| format!("install packages into {:?}", dest_dir))?;
