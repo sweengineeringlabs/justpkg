@@ -73,6 +73,12 @@ enum Command {
         /// Example: --substituter https://cache.swe.internal/swe-private
         #[arg(long = "substituter", short = 's')]
         substituters: Vec<String>,
+        /// Bearer token for the substituter at the same position in the
+        /// --substituter list (repeatable, positional pairing).
+        /// The first --substituter-token pairs with the first --substituter.
+        /// Omit for unauthenticated caches (e.g. cache.nixos.org).
+        #[arg(long = "substituter-token", short = 't')]
+        substituter_tokens: Vec<String>,
     },
 
     /// Verify that every package in a manifest has valid ELF binaries in the ext4 image
@@ -181,7 +187,7 @@ fn main() -> Result<()> {
             );
         }
 
-        Command::Install { manifest, dest_dir, packages, substituters: sub_flags } => {
+        Command::Install { manifest, dest_dir, packages, substituters: sub_flags, substituter_tokens: token_flags } => {
             let text = std::fs::read_to_string(&manifest)
                 .with_context(|| format!("read {:?}", manifest))?;
             let pkg_manifest = parse_manifest(&text)
@@ -198,11 +204,15 @@ fn main() -> Result<()> {
             };
 
             // CLI --substituter flags prepend the config substituter list.
-            // Tokens for private caches must come from application.toml; the CLI
-            // flag accepts URLs only.
+            // --substituter-token[i] supplies the Bearer token for --substituter[i].
+            // Substituters without a matching token are unauthenticated.
             let mut effective_subs: Vec<justpkg_config::SubstituterConfig> = sub_flags
                 .iter()
-                .map(|u| justpkg_config::SubstituterConfig::new(u))
+                .enumerate()
+                .map(|(i, u)| {
+                    let token = token_flags.get(i).filter(|t| !t.is_empty()).cloned();
+                    justpkg_config::SubstituterConfig { url: u.clone(), token }
+                })
                 .collect();
             effective_subs.extend(config.nix.effective_substituters());
 
