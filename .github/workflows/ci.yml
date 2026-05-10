@@ -22,6 +22,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout sibling path-deps
+        shell: bash
+        env:
+          CI_GIT_TOKEN: ${{ secrets.CI_GIT_TOKEN }}
+        run: |
+          # Cargo resolves path = "../justcas/cas" and "../filesystem/..."
+          # relative to the workspace root, so siblings must land one level up.
+          SHALLOW_ROOT="$(cd "$GITHUB_WORKSPACE/.." && pwd)"
+          cd "$SHALLOW_ROOT"
+          git clone --depth 1 --branch main \
+            "https://x-access-token:${CI_GIT_TOKEN}@github.com/sweengineeringlabs/justcas.git" \
+            justcas
+          git clone --depth 1 --branch dev \
+            "https://x-access-token:${CI_GIT_TOKEN}@github.com/sweengineeringlabs/filesystem.git" \
+            filesystem
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
