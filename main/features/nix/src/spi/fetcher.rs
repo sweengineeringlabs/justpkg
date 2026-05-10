@@ -57,7 +57,8 @@ impl<'a> NixFetcher<'a> {
             let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
 
             let mut compressed_bytes = Vec::new();
-            self.http.get_stream_auth(&nar_url, self.token, &mut compressed_bytes)?;
+            self.http
+                .get_stream_auth(&nar_url, self.token, &mut compressed_bytes)?;
 
             let digest = cas
                 .put(&compressed_bytes)
@@ -95,9 +96,8 @@ impl<'a> NixFetcher<'a> {
                     NixFetchError::NarExtract(format!("invalid FileHash base-32: {e}"))
                 })?
             } else if narinfo.file_hash.len() == 64 {
-                hex::decode(&narinfo.file_hash).map_err(|e| {
-                    NixFetchError::NarExtract(format!("invalid FileHash hex: {e}"))
-                })?
+                hex::decode(&narinfo.file_hash)
+                    .map_err(|e| NixFetchError::NarExtract(format!("invalid FileHash hex: {e}")))?
             } else {
                 return Err(NixFetchError::NarExtract(format!(
                     "unexpected FileHash length {} for {name}: expected 52 (Nix base-32) or 64 (hex)",
@@ -123,9 +123,9 @@ impl<'a> NixFetcher<'a> {
             let extract_path = dest_dir.join("nix").join("store").join(store_basename);
             // Create the parent so extract_nar can write the store node.
             // The NAR extractor handles creation of the node itself.
-            let parent = extract_path.parent().ok_or_else(|| {
-                NixFetchError::NarExtract("store path has no parent".to_string())
-            })?;
+            let parent = extract_path
+                .parent()
+                .ok_or_else(|| NixFetchError::NarExtract("store path has no parent".to_string()))?;
             std::fs::create_dir_all(parent).map_err(|e| {
                 NixFetchError::NarExtract(format!("failed to create store parent dir: {e}"))
             })?;
@@ -136,16 +136,19 @@ impl<'a> NixFetcher<'a> {
 
     fn fetch_narinfo_by_store_hash(&self, store_hash: &str) -> Result<NarInfo, NixFetchError> {
         let narinfo_url = format!("{}/{store_hash}.narinfo", self.cache_base);
-        let narinfo_bytes = self.http.get_bytes_auth(&narinfo_url, self.token).map_err(|e| {
-            // Translate HTTP 404 to NotFound so callers can implement substituter fallback.
-            if let justpkg_pkg::JustpkgError::Http { status: 404, .. } = &e {
-                return NixFetchError::NotFound {
-                    cache: self.cache_base.to_string(),
-                    store_hash: store_hash.to_string(),
-                };
-            }
-            NixFetchError::Core(e)
-        })?;
+        let narinfo_bytes = self
+            .http
+            .get_bytes_auth(&narinfo_url, self.token)
+            .map_err(|e| {
+                // Translate HTTP 404 to NotFound so callers can implement substituter fallback.
+                if let justpkg_pkg::JustpkgError::Http { status: 404, .. } = &e {
+                    return NixFetchError::NotFound {
+                        cache: self.cache_base.to_string(),
+                        store_hash: store_hash.to_string(),
+                    };
+                }
+                NixFetchError::Core(e)
+            })?;
         let narinfo_text =
             String::from_utf8(narinfo_bytes).map_err(|e| NixFetchError::NarInfoParse {
                 hash: store_hash.to_string(),
@@ -161,15 +164,12 @@ impl<'a> NixFetcher<'a> {
     /// layout `/<32-char-hash>-<name>-<version>`.  The store hash is extracted and
     /// used to fetch the `.narinfo` from `cache.nixos.org`.
     pub fn build_store_path(&self, store_path: &str, dest_dir: &Path) -> Result<(), NixFetchError> {
-        let basename = store_path
-            .strip_prefix("/nix/store/")
-            .ok_or_else(|| NixFetchError::NarExtract(format!("invalid store path: {store_path:?}")))?;
-        let store_hash = basename
-            .split_once('-')
-            .map(|(h, _)| h)
-            .ok_or_else(|| {
-                NixFetchError::NarExtract(format!("store path missing hash separator: {store_path:?}"))
-            })?;
+        let basename = store_path.strip_prefix("/nix/store/").ok_or_else(|| {
+            NixFetchError::NarExtract(format!("invalid store path: {store_path:?}"))
+        })?;
+        let store_hash = basename.split_once('-').map(|(h, _)| h).ok_or_else(|| {
+            NixFetchError::NarExtract(format!("store path missing hash separator: {store_path:?}"))
+        })?;
         let mut visited = std::collections::HashSet::new();
         self.build_with_closure(store_hash, dest_dir, &mut visited)
     }
@@ -196,16 +196,17 @@ impl<'a> NixFetcher<'a> {
         if !extract_path.exists() {
             let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
             let mut compressed = Vec::new();
-            self.http.get_stream_auth(&nar_url, self.token, &mut compressed)?;
+            self.http
+                .get_stream_auth(&nar_url, self.token, &mut compressed)?;
             let uncompressed =
                 decompress(&narinfo.compression, &compressed).map_err(NixFetchError::NarExtract)?;
             verify_nar_hash(&uncompressed, &narinfo.nar_hash)?;
 
             // Create the parent so extract_nar can write the store node.
             // The NAR extractor handles creation of the node itself.
-            let parent = extract_path.parent().ok_or_else(|| {
-                NixFetchError::NarExtract("store path has no parent".to_string())
-            })?;
+            let parent = extract_path
+                .parent()
+                .ok_or_else(|| NixFetchError::NarExtract("store path has no parent".to_string()))?;
             std::fs::create_dir_all(parent).map_err(|e| {
                 NixFetchError::NarExtract(format!("failed to create store parent dir: {e}"))
             })?;
@@ -241,9 +242,8 @@ impl<'a> NixFetcher<'a> {
 }
 
 fn verify_nar_hash(nar_bytes: &[u8], nar_hash_nix_base32: &str) -> Result<(), NixFetchError> {
-    let expected = nix_hash::nix_base32_decode(nar_hash_nix_base32).map_err(|e| {
-        NixFetchError::NarExtract(format!("invalid NarHash encoding: {e}"))
-    })?;
+    let expected = nix_hash::nix_base32_decode(nar_hash_nix_base32)
+        .map_err(|e| NixFetchError::NarExtract(format!("invalid NarHash encoding: {e}")))?;
     let actual = {
         use sha2::Digest;
         sha2::Sha256::digest(nar_bytes).to_vec()
@@ -345,14 +345,22 @@ mod tests_build_store_path {
         fn get_bytes(&self, _url: &str) -> Result<Vec<u8>, JustpkgError> {
             panic!("PanicClient: no HTTP request should be made for invalid store paths");
         }
-        fn get_stream(&self, _url: &str, _out: &mut dyn std::io::Write) -> Result<u64, JustpkgError> {
+        fn get_stream(
+            &self,
+            _url: &str,
+            _out: &mut dyn std::io::Write,
+        ) -> Result<u64, JustpkgError> {
             panic!("PanicClient: no HTTP request should be made for invalid store paths");
         }
     }
 
     #[test]
     fn test_build_store_path_rejects_path_without_nix_store_prefix() {
-        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org", token: None };
+        let fetcher = NixFetcher {
+            http: &PanicClient,
+            cache_base: "https://cache.nixos.org",
+            token: None,
+        };
         let err = fetcher
             .build_store_path("/usr/local/abc123-curl-8.0", std::path::Path::new("/dest"))
             .unwrap_err();
@@ -364,7 +372,11 @@ mod tests_build_store_path {
 
     #[test]
     fn test_build_store_path_rejects_path_without_hash_separator() {
-        let fetcher = NixFetcher { http: &PanicClient, cache_base: "https://cache.nixos.org", token: None };
+        let fetcher = NixFetcher {
+            http: &PanicClient,
+            cache_base: "https://cache.nixos.org",
+            token: None,
+        };
         let err = fetcher
             .build_store_path("/nix/store/nohyphennamehere", std::path::Path::new("/dest"))
             .unwrap_err();
@@ -383,7 +395,11 @@ mod tests_build_store_path {
         fetched: Arc<Mutex<HashSet<String>>>,
     }
     impl ClosureClient {
-        fn new() -> Self { Self { fetched: Arc::new(Mutex::new(HashSet::new())) } }
+        fn new() -> Self {
+            Self {
+                fetched: Arc::new(Mutex::new(HashSet::new())),
+            }
+        }
     }
 
     // A minimal valid NAR: "(" type regular contents "" ")"
@@ -413,12 +429,22 @@ mod tests_build_store_path {
     impl HttpClient for ClosureClient {
         fn get_bytes(&self, url: &str) -> Result<Vec<u8>, JustpkgError> {
             // narinfo requests: /<hash>.narinfo
-            let hash = url.split('/').last().unwrap().trim_end_matches(".narinfo").to_string();
-            self.fetched.lock().unwrap().insert(format!("narinfo:{hash}"));
+            let hash = url
+                .split('/')
+                .last()
+                .unwrap()
+                .trim_end_matches(".narinfo")
+                .to_string();
+            self.fetched
+                .lock()
+                .unwrap()
+                .insert(format!("narinfo:{hash}"));
 
             let (store_basename, references) = if hash.starts_with('a') {
-                ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-redis-7.2.7",
-                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-glibc-2.40-66")
+                (
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-redis-7.2.7",
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-glibc-2.40-66",
+                )
             } else {
                 ("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-glibc-2.40-66", "")
             };
@@ -451,7 +477,12 @@ mod tests_build_store_path {
 
         fn get_stream(&self, url: &str, out: &mut dyn std::io::Write) -> Result<u64, JustpkgError> {
             // NAR download requests: /nar/<hash>.nar
-            let hash = url.split('/').last().unwrap().trim_end_matches(".nar").to_string();
+            let hash = url
+                .split('/')
+                .last()
+                .unwrap()
+                .trim_end_matches(".nar")
+                .to_string();
             self.fetched.lock().unwrap().insert(format!("nar:{hash}"));
             let nar = minimal_nar();
             let n = nar.len() as u64;
@@ -467,16 +498,24 @@ mod tests_build_store_path {
         // strip_prefix("/nix/store/") which always returned None.
         let client = ClosureClient::new();
         let dest = tempfile::TempDir::new().unwrap();
-        let fetcher = NixFetcher { http: &client, cache_base: "http://cache", token: None };
+        let fetcher = NixFetcher {
+            http: &client,
+            cache_base: "http://cache",
+            token: None,
+        };
 
-        fetcher.build_store_path(
-            "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-redis-7.2.7",
-            dest.path(),
-        ).expect("build_store_path must succeed");
+        fetcher
+            .build_store_path(
+                "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-redis-7.2.7",
+                dest.path(),
+            )
+            .expect("build_store_path must succeed");
 
         let fetched = client.fetched.lock().unwrap().clone();
         assert!(
-            fetched.iter().any(|s| s.contains("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")),
+            fetched
+                .iter()
+                .any(|s| s.contains("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")),
             "glibc (transitive dep via bare basename reference) must be fetched; got: {fetched:?}"
         );
     }

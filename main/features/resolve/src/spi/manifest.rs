@@ -1,6 +1,6 @@
-use std::path::Path;
 use crate::api::error::ResolveError;
 use crate::api::types::ResolvedManifest;
+use std::path::Path;
 
 /// Serialise `manifest` to `path` as pretty-printed JSON.
 ///
@@ -40,15 +40,32 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     loop {
         let leap = is_leap(year);
         let dy = if leap { 366 } else { 365 };
-        if days < dy { break; }
+        if days < dy {
+            break;
+        }
         days -= dy;
         year += 1;
     }
     let leap = is_leap(year);
-    let months = [31u64, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31u64,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut month = 1u64;
     for dm in &months {
-        if days < *dm { break; }
+        if days < *dm {
+            break;
+        }
         days -= dm;
         month += 1;
     }
@@ -62,9 +79,9 @@ fn is_leap(y: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::types::ManifestMeta;
     use std::collections::BTreeMap;
     use tempfile::NamedTempFile;
-    use crate::api::types::ManifestMeta;
 
     fn fixture_manifest() -> ResolvedManifest {
         let mut packages = BTreeMap::new();

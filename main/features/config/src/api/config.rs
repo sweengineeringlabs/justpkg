@@ -21,7 +21,10 @@ pub struct SubstituterConfig {
 impl SubstituterConfig {
     /// Construct an unauthenticated substituter from a URL.
     pub fn new(url: impl Into<String>) -> Self {
-        Self { url: url.into(), token: None }
+        Self {
+            url: url.into(),
+            token: None,
+        }
     }
 }
 

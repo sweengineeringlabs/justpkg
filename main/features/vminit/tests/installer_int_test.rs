@@ -10,9 +10,9 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use swe_justpkg_vminit::{install_packages, parse_manifest, VminitInstallError};
 #[cfg(unix)]
 use swe_justpkg_vminit::generate_root_layout;
+use swe_justpkg_vminit::{install_packages, parse_manifest, VminitInstallError};
 
 // ── Test stubs ──────────────────────────────────────────────────────────────
 
@@ -181,14 +181,20 @@ struct RecordingNotFoundClient {
 impl justpkg_pkg::HttpClient for RecordingNotFoundClient {
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
         self.tried_urls.lock().unwrap().push(url.to_string());
-        Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+        Err(justpkg_pkg::JustpkgError::Http {
+            url: url.to_string(),
+            status: 404,
+        })
     }
     fn get_stream(
         &self,
         url: &str,
         _dest: &mut dyn std::io::Write,
     ) -> Result<u64, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+        Err(justpkg_pkg::JustpkgError::Http {
+            url: url.to_string(),
+            status: 404,
+        })
     }
 }
 
@@ -198,7 +204,9 @@ fn test_install_packages_skips_404_substituter_and_tries_next() {
     // second substituter.  Both return 404 here so we verify the URL of the
     // second narinfo request to confirm fallback happened.
     let tried = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-    let http = RecordingNotFoundClient { tried_urls: Arc::clone(&tried) };
+    let http = RecordingNotFoundClient {
+        tried_urls: Arc::clone(&tried),
+    };
     let manifest = parse_manifest(TWO_ENTRY_MANIFEST).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
@@ -211,7 +219,7 @@ fn test_install_packages_skips_404_substituter_and_tries_next() {
 
     let urls = tried.lock().unwrap().clone();
     let tried_private = urls.iter().any(|u| u.contains("private.cache.example"));
-    let tried_public  = urls.iter().any(|u| u.contains("cache.nixos.org"));
+    let tried_public = urls.iter().any(|u| u.contains("cache.nixos.org"));
     assert!(
         tried_private,
         "first substituter (private.cache.example) must be tried; got: {urls:?}"
@@ -227,7 +235,9 @@ fn test_install_packages_propagates_non_404_error_without_fallback() {
     // A 503 from the first substituter must NOT trigger fallback — only 404 does.
     // We count narinfo requests: if fallback happened the count would be 2.
     let call_count = Arc::new(AtomicU32::new(0));
-    let http = CountingHttpClient { call_count: Arc::clone(&call_count) };
+    let http = CountingHttpClient {
+        call_count: Arc::clone(&call_count),
+    };
     let manifest = parse_manifest(TWO_ENTRY_MANIFEST).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
@@ -256,7 +266,9 @@ fn test_install_packages_propagates_non_404_error_without_fallback() {
 /// Creates `<dest_dir>/<store_path>/bin/<binary>` as a regular file.
 #[cfg(unix)]
 fn create_fake_store_bin(dest_dir: &std::path::Path, store_path: &str, binaries: &[&str]) {
-    let bin_dir = dest_dir.join(store_path.trim_start_matches('/')).join("bin");
+    let bin_dir = dest_dir
+        .join(store_path.trim_start_matches('/'))
+        .join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
     for &b in binaries {
         std::fs::write(bin_dir.join(b), b"#!/bin/sh\nexec true\n").unwrap();
@@ -279,7 +291,8 @@ fn test_generate_root_layout_creates_bin_with_symlinks_to_store() {
     let store_path = "/nix/store/aaaabbbbccccddddeeeeffffgggg0000-curl-8.10.1";
     create_fake_store_bin(dest, store_path, &["curl", "curl-config"]);
 
-    let manifest_text = r#"{"packages": {"curl": "/nix/store/aaaabbbbccccddddeeeeffffgggg0000-curl-8.10.1"}}"#;
+    let manifest_text =
+        r#"{"packages": {"curl": "/nix/store/aaaabbbbccccddddeeeeffffgggg0000-curl-8.10.1"}}"#;
     let manifest = parse_manifest(manifest_text).unwrap();
 
     generate_root_layout(&manifest, &["curl"], dest).unwrap();
@@ -319,14 +332,18 @@ fn test_generate_root_layout_skips_package_with_no_bin_dir() {
     let share_dir = dest.join(store_path.trim_start_matches('/')).join("share");
     std::fs::create_dir_all(&share_dir).unwrap();
 
-    let manifest_text = r#"{"packages": {"tzdata": "/nix/store/ccccddddeeeeffffgggg0000aaaabbbb-tzdata-2025b"}}"#;
+    let manifest_text =
+        r#"{"packages": {"tzdata": "/nix/store/ccccddddeeeeffffgggg0000aaaabbbb-tzdata-2025b"}}"#;
     let manifest = parse_manifest(manifest_text).unwrap();
 
     let result = generate_root_layout(&manifest, &["tzdata"], dest);
 
     assert!(result.is_ok(), "missing bin/ must not be an error");
     // bin/ is still created (the directory itself satisfies vminit's check).
-    assert!(dest.join("bin").is_dir(), "bin/ must be created even if empty");
+    assert!(
+        dest.join("bin").is_dir(),
+        "bin/ must be created even if empty"
+    );
     assert_eq!(
         std::fs::read_dir(dest.join("bin")).unwrap().count(),
         0,

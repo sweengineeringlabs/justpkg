@@ -18,7 +18,9 @@ impl HttpClient for UreqClient {
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, JustpkgError> {
         let resp = ureq::get(url).call().map_err(|e| map_ureq_error(url, e))?;
         let mut buf = Vec::new();
-        resp.into_reader().read_to_end(&mut buf).map_err(JustpkgError::Io)?;
+        resp.into_reader()
+            .read_to_end(&mut buf)
+            .map_err(JustpkgError::Io)?;
         Ok(buf)
     }
 
@@ -35,7 +37,9 @@ impl HttpClient for UreqClient {
         }
         let resp = req.call().map_err(|e| map_ureq_error(url, e))?;
         let mut buf = Vec::new();
-        resp.into_reader().read_to_end(&mut buf).map_err(JustpkgError::Io)?;
+        resp.into_reader()
+            .read_to_end(&mut buf)
+            .map_err(JustpkgError::Io)?;
         Ok(buf)
     }
 

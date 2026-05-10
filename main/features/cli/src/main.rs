@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -7,7 +7,7 @@ use ext4::{Ext4Error, Filesystem};
 use justpkg_config::load as load_config;
 use justpkg_nix::{FlakeLock, NixFetcher};
 use justpkg_pkg::UreqClient;
-use justpkg_vminit::{VminitInstaller, parse_manifest};
+use justpkg_vminit::{parse_manifest, VminitInstaller};
 
 #[derive(Parser)]
 #[command(name = "justpkg", about = "Nix NAR fetcher and extractor")]
@@ -109,7 +109,11 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&dest_dir)
                 .with_context(|| format!("create dest dir {:?}", dest_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
+            let fetcher = NixFetcher {
+                http: &http,
+                cache_base: &cache_base,
+                token: None,
+            };
             fetcher
                 .build(&lock, &dest_dir)
                 .with_context(|| "NAR fetch/extract failed")?;
@@ -125,7 +129,11 @@ fn main() -> Result<()> {
             let cas =
                 FsCas::new(&cache_dir).with_context(|| format!("open CAS at {:?}", cache_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
+            let fetcher = NixFetcher {
+                http: &http,
+                cache_base: &cache_base,
+                token: None,
+            };
             let map = fetcher
                 .fetch_to_cas(&lock, &cas)
                 .with_context(|| "NAR fetch to CAS failed")?;
@@ -148,7 +156,11 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&dest_dir)
                 .with_context(|| format!("create dest dir {:?}", dest_dir))?;
             let http = UreqClient;
-            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
+            let fetcher = NixFetcher {
+                http: &http,
+                cache_base: &cache_base,
+                token: None,
+            };
             fetcher
                 .extract_from_cas(&lock, &cas, &dest_dir)
                 .with_context(|| "NAR extract from CAS failed")?;
@@ -171,14 +183,9 @@ fn main() -> Result<()> {
                 }
             }
             let http = UreqClient;
-            let manifest = justpkg_resolve::resolve(
-                &http,
-                &spec,
-                &channel_base,
-                &resolve_cache,
-                &out,
-            )
-            .with_context(|| format!("resolve {:?}", packages_toml))?;
+            let manifest =
+                justpkg_resolve::resolve(&http, &spec, &channel_base, &resolve_cache, &out)
+                    .with_context(|| format!("resolve {:?}", packages_toml))?;
             eprintln!(
                 "resolved {} package(s) → {} (nixpkgs {})",
                 manifest.packages.len(),
@@ -187,11 +194,17 @@ fn main() -> Result<()> {
             );
         }
 
-        Command::Install { manifest, dest_dir, packages, substituters: sub_flags, substituter_tokens: token_flags } => {
+        Command::Install {
+            manifest,
+            dest_dir,
+            packages,
+            substituters: sub_flags,
+            substituter_tokens: token_flags,
+        } => {
             let text = std::fs::read_to_string(&manifest)
                 .with_context(|| format!("read {:?}", manifest))?;
-            let pkg_manifest = parse_manifest(&text)
-                .with_context(|| format!("parse {:?}", manifest))?;
+            let pkg_manifest =
+                parse_manifest(&text).with_context(|| format!("parse {:?}", manifest))?;
             std::fs::create_dir_all(&dest_dir)
                 .with_context(|| format!("create dest dir {:?}", dest_dir))?;
 
@@ -211,7 +224,10 @@ fn main() -> Result<()> {
                 .enumerate()
                 .map(|(i, u)| {
                     let token = token_flags.get(i).filter(|t| !t.is_empty()).cloned();
-                    justpkg_config::SubstituterConfig { url: u.clone(), token }
+                    justpkg_config::SubstituterConfig {
+                        url: u.clone(),
+                        token,
+                    }
                 })
                 .collect();
             effective_subs.extend(config.nix.effective_substituters());
@@ -221,18 +237,21 @@ fn main() -> Result<()> {
             installer
                 .install(&names, &dest_dir)
                 .with_context(|| format!("install packages into {:?}", dest_dir))?;
-            eprintln!("installed {} package(s) → {}", names.len(), dest_dir.display());
+            eprintln!(
+                "installed {} package(s) → {}",
+                names.len(),
+                dest_dir.display()
+            );
         }
 
         Command::VerifyImage { manifest, image } => {
             let text = std::fs::read_to_string(&manifest)
                 .with_context(|| format!("read {:?}", manifest))?;
-            let pkg_manifest = parse_manifest(&text)
-                .with_context(|| format!("parse {:?}", manifest))?;
-            let f = std::fs::File::open(&image)
-                .with_context(|| format!("open image {:?}", image))?;
-            let mut fs = Filesystem::open(f)
-                .with_context(|| format!("open ext4 {:?}", image))?;
+            let pkg_manifest =
+                parse_manifest(&text).with_context(|| format!("parse {:?}", manifest))?;
+            let f =
+                std::fs::File::open(&image).with_context(|| format!("open image {:?}", image))?;
+            let mut fs = Filesystem::open(f).with_context(|| format!("open ext4 {:?}", image))?;
 
             let mut all_ok = true;
             for (name, store_path) in &pkg_manifest.entries {
@@ -281,9 +300,11 @@ fn verify_package<R: std::io::Read + std::io::Seek>(
         Err(Ext4Error::NotFound { .. }) => return Ok(0),
         Err(e) => return Err(e).with_context(|| format!("open {bin_path}")),
     };
-    let bin_inode = fs.read_inode(bin_inode_num)
+    let bin_inode = fs
+        .read_inode(bin_inode_num)
         .with_context(|| format!("read inode for {bin_path}"))?;
-    let entries = fs.read_dir(&bin_inode)
+    let entries = fs
+        .read_dir(&bin_inode)
         .with_context(|| format!("read dir {bin_path}"))?;
 
     let mut count = 0usize;
@@ -296,14 +317,17 @@ fn verify_package<R: std::io::Read + std::io::Seek>(
             continue;
         }
         let file_path = format!("{bin_path}/{entry_name}");
-        let file_inode_num = fs.open_path(&file_path)
+        let file_inode_num = fs
+            .open_path(&file_path)
             .with_context(|| format!("open {file_path}"))?;
-        let file_inode = fs.read_inode(file_inode_num)
+        let file_inode = fs
+            .read_inode(file_inode_num)
             .with_context(|| format!("read inode {file_path}"))?;
         if !file_inode.is_regular() {
             continue;
         }
-        let data = fs.read_file(&file_inode)
+        let data = fs
+            .read_file(&file_inode)
             .with_context(|| format!("read file {file_path}"))?;
         let is_elf = data.len() >= 4 && data[..4] == ELF_MAGIC;
         let is_script = data.len() >= 2 && data[..2] == SHEBANG;

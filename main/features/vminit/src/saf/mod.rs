@@ -15,7 +15,11 @@ pub struct VminitInstaller<'a> {
 impl<'a> VminitInstaller<'a> {
     /// Create a new installer using the default binary cache (`cache.nixos.org`).
     pub fn new(http: &'a dyn justpkg_pkg::HttpClient, manifest: PackageManifest) -> Self {
-        Self { http, manifest, substituters: Vec::new() }
+        Self {
+            http,
+            manifest,
+            substituters: Vec::new(),
+        }
     }
 
     /// Create a new installer with an explicit ordered substituter list.
@@ -27,7 +31,11 @@ impl<'a> VminitInstaller<'a> {
         manifest: PackageManifest,
         substituters: Vec<justpkg_config::SubstituterConfig>,
     ) -> Self {
-        Self { http, manifest, substituters }
+        Self {
+            http,
+            manifest,
+            substituters,
+        }
     }
 
     /// Fetch and extract `names` into `dest_dir`, then generate the root layout.
@@ -41,7 +49,13 @@ impl<'a> VminitInstaller<'a> {
         names: &[&str],
         dest_dir: &std::path::Path,
     ) -> Result<(), VminitInstallError> {
-        install_packages(self.http, &self.manifest, names, dest_dir, &self.substituters)?;
+        install_packages(
+            self.http,
+            &self.manifest,
+            names,
+            dest_dir,
+            &self.substituters,
+        )?;
         generate_root_layout(&self.manifest, names, dest_dir)
     }
 }

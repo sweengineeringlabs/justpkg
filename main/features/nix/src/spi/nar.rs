@@ -91,14 +91,17 @@ fn read_regular<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
                 match std::fs::File::create(path) {
                     Ok(mut file) => {
                         use std::io::Write;
-                        file.write_all(&buf[..len])
-                            .map_err(|e| NixFetchError::NarExtract(format!("write {path:?}: {e}")))?;
+                        file.write_all(&buf[..len]).map_err(|e| {
+                            NixFetchError::NarExtract(format!("write {path:?}: {e}"))
+                        })?;
 
                         #[cfg(unix)]
                         if executable {
                             use std::os::unix::fs::PermissionsExt;
                             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-                                .map_err(|e| NixFetchError::NarExtract(format!("chmod {path:?}: {e}")))?;
+                                .map_err(|e| {
+                                    NixFetchError::NarExtract(format!("chmod {path:?}: {e}"))
+                                })?;
                         }
                     }
                     #[cfg(windows)]
@@ -174,20 +177,23 @@ fn read_symlink<R: Read>(r: &mut R, path: &Path) -> Result<(), NixFetchError> {
                 .map_err(|e| NixFetchError::NarExtract(format!("mkdir: {e}")))?;
         }
 
-        let created = symlink_file(&_target, path).is_ok()
-            || symlink_dir(&_target, path).is_ok();
+        let created = symlink_file(&_target, path).is_ok() || symlink_dir(&_target, path).is_ok();
 
         if !created {
             use std::io::Write;
             match std::fs::File::create(path) {
                 Ok(mut f) => {
-                    writeln!(f, "{_target}")
-                        .map_err(|e| NixFetchError::NarExtract(format!("write symlink stub: {e}")))?;
+                    writeln!(f, "{_target}").map_err(|e| {
+                        NixFetchError::NarExtract(format!("write symlink stub: {e}"))
+                    })?;
                 }
                 Err(_) => {
                     // Path is invalid on Windows (e.g. reserved device name, illegal char).
                     // Symlinks are not packed by build-from-tree; skip silently.
-                    eprintln!("  warn: skipping symlink {:?} -> {_target} (not representable on Windows)", path);
+                    eprintln!(
+                        "  warn: skipping symlink {:?} -> {_target} (not representable on Windows)",
+                        path
+                    );
                 }
             }
         }

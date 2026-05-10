@@ -41,13 +41,12 @@ pub fn resolve(
     let mut packages = BTreeMap::new();
 
     for entry in &spec.packages {
-        let store_path =
-            store_paths::find_store_path(&paths, &entry.name).ok_or_else(|| {
-                ResolveError::PackageNotFound {
-                    name: entry.name.clone(),
-                    channel: spec.nixpkgs_channel.clone(),
-                }
-            })?;
+        let store_path = store_paths::find_store_path(&paths, &entry.name).ok_or_else(|| {
+            ResolveError::PackageNotFound {
+                name: entry.name.clone(),
+                channel: spec.nixpkgs_channel.clone(),
+            }
+        })?;
         packages.insert(entry.name.clone(), store_path.to_string());
     }
 

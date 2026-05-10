@@ -41,10 +41,12 @@ pub fn fetch_store_paths(
     }
 
     let url = store_paths_url(channel_base, channel);
-    let compressed = http.get_bytes(&url).map_err(|e| ResolveError::ChannelFetch {
-        channel: channel.to_string(),
-        message: e.to_string(),
-    })?;
+    let compressed = http
+        .get_bytes(&url)
+        .map_err(|e| ResolveError::ChannelFetch {
+            channel: channel.to_string(),
+            message: e.to_string(),
+        })?;
 
     let text = decompress_xz(&compressed, &url, channel)?;
     std::fs::write(&path, &text).map_err(|e| ResolveError::CacheWrite {
@@ -62,10 +64,12 @@ pub fn fetch_git_revision(
     channel_base: &str,
 ) -> Result<String, ResolveError> {
     let url = git_revision_url(channel_base, channel);
-    let bytes = http.get_bytes(&url).map_err(|e| ResolveError::ChannelFetch {
-        channel: channel.to_string(),
-        message: e.to_string(),
-    })?;
+    let bytes = http
+        .get_bytes(&url)
+        .map_err(|e| ResolveError::ChannelFetch {
+            channel: channel.to_string(),
+            message: e.to_string(),
+        })?;
     let rev = String::from_utf8_lossy(&bytes).trim().to_string();
     if rev.len() < 7 {
         return Err(ResolveError::ChannelFetch {
@@ -98,8 +102,8 @@ pub fn find_store_path<'a>(paths: &'a [String], name: &str) -> Option<&'a str> {
     let drv_name_offset = "/nix/store/".len() + 32 + 1; // = 44
 
     let extension_suffixes = [
-        "-lib", "-dev", "-man", "-doc", "-bin", "-data", "-debug",
-        "-include", "-static", "-headers",
+        "-lib", "-dev", "-man", "-doc", "-bin", "-data", "-debug", "-include", "-static",
+        "-headers",
     ];
     let exclude_keywords = ["test-run-", "nixos-test", "test-driver", "-driver-"];
 
@@ -120,9 +124,7 @@ pub fn find_store_path<'a>(paths: &'a [String], name: &str) -> Option<&'a str> {
 
     let mut candidates: Vec<&str> = paths
         .iter()
-        .filter(|p| {
-            matches_name(p) && !exclude_keywords.iter().any(|kw| p.contains(kw))
-        })
+        .filter(|p| matches_name(p) && !exclude_keywords.iter().any(|kw| p.contains(kw)))
         .map(|s| s.as_str())
         .collect();
 
@@ -134,20 +136,30 @@ pub fn find_store_path<'a>(paths: &'a [String], name: &str) -> Option<&'a str> {
     // (e.g. "tzdata-2025b" before "tzdata-0.2.20240201.0").  Within the same derivation
     // name, fall back to store hash (ascending) for determinism.
     candidates.sort_unstable_by(|a, b| {
-        let drv_a = if a.len() > drv_name_offset { &a[drv_name_offset..] } else { "" };
-        let drv_b = if b.len() > drv_name_offset { &b[drv_name_offset..] } else { "" };
+        let drv_a = if a.len() > drv_name_offset {
+            &a[drv_name_offset..]
+        } else {
+            ""
+        };
+        let drv_b = if b.len() > drv_name_offset {
+            &b[drv_name_offset..]
+        } else {
+            ""
+        };
         drv_b.cmp(drv_a).then(a.cmp(b))
     });
 
     let primary: Vec<&str> = candidates
         .iter()
         .copied()
-        .filter(|p| {
-            !extension_suffixes.iter().any(|suf| p.ends_with(suf))
-        })
+        .filter(|p| !extension_suffixes.iter().any(|suf| p.ends_with(suf)))
         .collect();
 
-    Some(if !primary.is_empty() { primary[0] } else { candidates[0] })
+    Some(if !primary.is_empty() {
+        primary[0]
+    } else {
+        candidates[0]
+    })
 }
 
 fn decompress_xz(data: &[u8], url: &str, channel: &str) -> Result<String, ResolveError> {
@@ -185,9 +197,7 @@ mod tests {
 
     #[test]
     fn test_find_store_path_handles_underscore_to_hyphen() {
-        let ps = paths(&[
-            "/nix/store/aaaabbbbccccddddeeeeffffgggg0000-postgresql-16.9",
-        ]);
+        let ps = paths(&["/nix/store/aaaabbbbccccddddeeeeffffgggg0000-postgresql-16.9"]);
         assert_eq!(
             find_store_path(&ps, "postgresql_16"),
             Some("/nix/store/aaaabbbbccccddddeeeeffffgggg0000-postgresql-16.9")
@@ -268,7 +278,10 @@ mod tests {
         let r2 = find_store_path(&ps, "postgresql_16").unwrap();
         assert_eq!(r1, r2, "must be deterministic");
         // Same drv name → hash tiebreak → smallest hash.
-        assert!(r1.contains("aaaa"), "hash tiebreak must pick lexicographically smallest: {r1}");
+        assert!(
+            r1.contains("aaaa"),
+            "hash tiebreak must pick lexicographically smallest: {r1}"
+        );
     }
 
     #[test]

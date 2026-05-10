@@ -13,7 +13,7 @@
 use std::path::Path;
 
 use justpkg_config::SubstituterConfig;
-use justpkg_nix::{is_not_found, NixFetcher, NixFetchError, DEFAULT_CACHE_BASE};
+use justpkg_nix::{is_not_found, NixFetchError, NixFetcher, DEFAULT_CACHE_BASE};
 use justpkg_pkg::HttpClient;
 
 use crate::api::error::VminitInstallError;
@@ -35,12 +35,19 @@ pub fn install_packages(
     };
 
     for &name in names {
-        let store_path = manifest.entries.get(name).ok_or_else(|| {
-            VminitInstallError::PackageNotFound { name: name.to_string() }
-        })?;
+        let store_path =
+            manifest
+                .entries
+                .get(name)
+                .ok_or_else(|| VminitInstallError::PackageNotFound {
+                    name: name.to_string(),
+                })?;
 
         fetch_with_fallback(http, store_path, dest_dir, subs).map_err(|source| {
-            VminitInstallError::FetchFailed { name: name.to_string(), source }
+            VminitInstallError::FetchFailed {
+                name: name.to_string(),
+                source,
+            }
         })?;
     }
     Ok(())
@@ -56,7 +63,11 @@ fn fetch_with_fallback(
 ) -> Result<(), NixFetchError> {
     let mut last_err: Option<NixFetchError> = None;
     for sub in substituters {
-        let fetcher = NixFetcher { http, cache_base: &sub.url, token: sub.token.as_deref() };
+        let fetcher = NixFetcher {
+            http,
+            cache_base: &sub.url,
+            token: sub.token.as_deref(),
+        };
         match fetcher.build_store_path(store_path, dest_dir) {
             Ok(()) => return Ok(()),
             Err(e) if is_not_found(&e) => {
@@ -65,9 +76,8 @@ fn fetch_with_fallback(
             Err(e) => return Err(e),
         }
     }
-    Err(last_err.unwrap_or_else(|| {
-        NixFetchError::NarExtract("no substituters configured".to_string())
-    }))
+    Err(last_err
+        .unwrap_or_else(|| NixFetchError::NarExtract("no substituters configured".to_string())))
 }
 
 /// Populate root-level `bin/` in `dest_dir` with symlinks into the Nix store.
@@ -109,18 +119,18 @@ pub fn generate_root_layout(
             continue;
         }
 
-        let entries =
-            std::fs::read_dir(&store_bin).map_err(|source| VminitInstallError::RootLayoutFailed {
+        let entries = std::fs::read_dir(&store_bin).map_err(|source| {
+            VminitInstallError::RootLayoutFailed {
                 reason: format!("read_dir {}", store_bin.display()),
                 source,
-            })?;
+            }
+        })?;
 
         for entry in entries {
-            let entry =
-                entry.map_err(|source| VminitInstallError::RootLayoutFailed {
-                    reason: format!("read entry in {}", store_bin.display()),
-                    source,
-                })?;
+            let entry = entry.map_err(|source| VminitInstallError::RootLayoutFailed {
+                reason: format!("read entry in {}", store_bin.display()),
+                source,
+            })?;
 
             let dest = bin_dir.join(entry.file_name());
             if dest.exists() || dest.is_symlink() {

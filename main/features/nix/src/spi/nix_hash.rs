@@ -75,7 +75,11 @@ pub fn nix_base32_encode(bytes: &[u8]) -> String {
         let i = b / 8;
         let j = b % 8;
         let c0 = bytes[i] as u32;
-        let c1 = if i + 1 < bytes.len() { bytes[i + 1] as u32 } else { 0 };
+        let c1 = if i + 1 < bytes.len() {
+            bytes[i + 1] as u32
+        } else {
+            0
+        };
         let c = ((c0 >> j) | (c1 << (8 - j))) & 0x1f;
         out.push(NIX_BASE32_CHARS[c as usize]);
     }
@@ -107,7 +111,11 @@ mod tests_encode {
     #[test]
     fn test_nix_base32_encode_all_zeros_produces_all_zero_chars() {
         let result = nix_base32_encode(&[0u8; 20]);
-        assert_eq!(result.len(), 32, "20 bytes must produce 32 Nix base-32 chars");
+        assert_eq!(
+            result.len(),
+            32,
+            "20 bytes must produce 32 Nix base-32 chars"
+        );
         assert!(
             result.chars().all(|c| c == '0'),
             "all-zero bytes must encode to all '0' chars, got: {result}"
@@ -117,7 +125,11 @@ mod tests_encode {
     #[test]
     fn test_nix_base32_encode_all_ones_produces_all_z_chars() {
         let result = nix_base32_encode(&[0xffu8; 20]);
-        assert_eq!(result.len(), 32, "20 bytes must produce 32 Nix base-32 chars");
+        assert_eq!(
+            result.len(),
+            32,
+            "20 bytes must produce 32 Nix base-32 chars"
+        );
         assert!(
             result.chars().all(|c| c == 'z'),
             "all-0xff bytes must encode to all 'z' chars, got: {result}"
@@ -139,8 +151,7 @@ mod tests_encode {
     fn test_nar_hash_to_store_path_hash_output_is_32_valid_nix_base32_chars() {
         // sha256 of empty string in SRI format
         let sri = "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
-        let result = nar_hash_to_store_path_hash(sri)
-            .expect("must succeed for valid SRI");
+        let result = nar_hash_to_store_path_hash(sri).expect("must succeed for valid SRI");
         assert_eq!(result.len(), 32, "store path hash must be 32 chars");
         let valid_chars: &str = "0123456789abcdfghijklmnpqrsvwxyz";
         assert!(
@@ -151,8 +162,8 @@ mod tests_encode {
 
     #[test]
     fn test_nar_hash_to_store_path_hash_rejects_invalid_sri() {
-        let err = nar_hash_to_store_path_hash("md5-not-valid")
-            .expect_err("must fail for non-sha256 SRI");
+        let err =
+            nar_hash_to_store_path_hash("md5-not-valid").expect_err("must fail for non-sha256 SRI");
         assert!(
             matches!(err, NixFetchError::InvalidNixHash(_)),
             "must return InvalidNixHash error, got: {err:?}"

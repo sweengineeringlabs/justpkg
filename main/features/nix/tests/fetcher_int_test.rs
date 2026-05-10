@@ -52,7 +52,11 @@ fn nix_base32_encode(bytes: &[u8]) -> String {
         let i = b / 8;
         let j = b % 8;
         let c0 = bytes[i] as u32;
-        let c1 = if i + 1 < bytes.len() { bytes[i + 1] as u32 } else { 0 };
+        let c1 = if i + 1 < bytes.len() {
+            bytes[i + 1] as u32
+        } else {
+            0
+        };
         let c = ((c0 >> j) | (c1 << (8 - j))) & 0x1f;
         out.push(NIX_BASE32_CHARS[c as usize]);
     }
@@ -104,7 +108,11 @@ fn test_build_fails_on_unreachable_cache() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let client = FailingClient;
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
     let result = fetcher.build(&lock, dir.path());
     assert!(result.is_err(), "HTTP failure must propagate as error");
     assert!(matches!(result.unwrap_err(), NixFetchError::Core(_)));
@@ -116,7 +124,11 @@ fn test_build_real_flake_lock_fetches_nar() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let http = UreqClient;
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &http,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
     fetcher.build(&lock, dir.path()).unwrap();
 }
 
@@ -222,7 +234,11 @@ fn test_build_zstd_nar_decompresses_and_extracts_correctly() {
     let expected_content = b"zstd test payload";
     let client = ZstdMockClient::new(expected_content);
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     fetcher
         .build(&lock, &dest)
@@ -230,7 +246,8 @@ fn test_build_zstd_nar_decompresses_and_extracts_correctly() {
 
     // Issue #2: file must be under nix/store/<basename>/, not flat at dest.
     let extracted = dest.join("nix").join("store").join("test-pkg");
-    let actual = std::fs::read(&extracted).expect("extracted file must exist at nix/store/test-pkg");
+    let actual =
+        std::fs::read(&extracted).expect("extracted file must exist at nix/store/test-pkg");
     assert_eq!(
         actual, expected_content,
         "decompressed+extracted content must match original payload"
@@ -250,8 +267,7 @@ impl Bzip2MockClient {
         let raw_nar = build_single_file_nar(file_content);
 
         let mut compressed = Vec::new();
-        let mut encoder =
-            bzip2::write::BzEncoder::new(&mut compressed, bzip2::Compression::best());
+        let mut encoder = bzip2::write::BzEncoder::new(&mut compressed, bzip2::Compression::best());
         std::io::copy(&mut std::io::Cursor::new(&raw_nar), &mut encoder)
             .expect("bzip2 encode failed");
         encoder.finish().expect("bzip2 finish failed");
@@ -330,7 +346,11 @@ fn test_build_bzip2_nar_decompresses_and_extracts_correctly() {
     let expected_content = b"bzip2 test payload";
     let client = Bzip2MockClient::new(expected_content);
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     fetcher
         .build(&lock, &dest)
@@ -338,7 +358,8 @@ fn test_build_bzip2_nar_decompresses_and_extracts_correctly() {
 
     // Issue #2: file must be under nix/store/<basename>/, not flat at dest.
     let extracted = dest.join("nix").join("store").join("test-pkg");
-    let actual = std::fs::read(&extracted).expect("extracted file must exist at nix/store/test-pkg");
+    let actual =
+        std::fs::read(&extracted).expect("extracted file must exist at nix/store/test-pkg");
     assert_eq!(
         actual, expected_content,
         "decompressed+extracted content must match original bzip2 payload"
@@ -431,7 +452,11 @@ fn test_fetch_to_cas_stores_compressed_nar_in_cas() {
     let http = NoneCompressionStubClient::new(nar.clone());
     let cas = MemCas::new();
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &http,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     let map = fetcher
         .fetch_to_cas(&lock, &cas)
@@ -489,7 +514,11 @@ fn test_fetch_to_cas_returned_digest_matches_sha256_of_stored_bytes() {
     let http = NoneCompressionStubClient::new(nar);
     let cas_store = MemCas::new();
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &http,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     let map = fetcher.fetch_to_cas(&lock, &cas_store).unwrap();
     let actual_digest = map.values().next().unwrap().clone();
@@ -521,7 +550,11 @@ fn test_extract_from_cas_extracts_file_to_dest_dir() {
     cas_store.put(&nar).expect("pre-populate CAS");
 
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &http,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
     let parent = tempfile::tempdir().unwrap();
     let dest_dir = parent.path().join("root");
 
@@ -553,7 +586,11 @@ fn test_extract_from_cas_fails_when_blob_absent_from_cas() {
     let http = NoneCompressionStubClient::new(nar);
     let empty_cas = MemCas::new(); // nothing stored — simulates skipped fetch step
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
-    let fetcher = NixFetcher { http: &http, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &http,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
     let parent = tempfile::tempdir().unwrap();
 
     let result = fetcher.extract_from_cas(&lock, &empty_cas, parent.path());
@@ -603,7 +640,10 @@ fn test_build_extracts_to_nix_store_path_subdir() {
             if url.ends_with(".narinfo") {
                 return Ok(self.narinfo_text.as_bytes().to_vec());
             }
-            Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+            Err(justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 404,
+            })
         }
         fn get_stream(
             &self,
@@ -612,18 +652,31 @@ fn test_build_extracts_to_nix_store_path_subdir() {
         ) -> Result<u64, justpkg_pkg::JustpkgError> {
             if url.ends_with("nar/abc123.nar") {
                 dest.write_all(&self.nar_bytes)
-                    .map_err(|_| justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 0 })?;
+                    .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                        url: url.to_string(),
+                        status: 0,
+                    })?;
                 return Ok(self.nar_bytes.len() as u64);
             }
-            Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+            Err(justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 404,
+            })
         }
     }
 
-    let client = StorePathStub { narinfo_text, nar_bytes };
+    let client = StorePathStub {
+        narinfo_text,
+        nar_bytes,
+    };
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let parent = tempfile::tempdir().unwrap();
     let dest = parent.path().join("out");
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     fetcher
         .build(&lock, &dest)
@@ -687,7 +740,10 @@ fn test_build_rejects_tampered_nar_bytes() {
             if url.ends_with(".narinfo") {
                 return Ok(self.narinfo_text.as_bytes().to_vec());
             }
-            Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+            Err(justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 404,
+            })
         }
         fn get_stream(
             &self,
@@ -695,18 +751,32 @@ fn test_build_rejects_tampered_nar_bytes() {
             dest: &mut dyn std::io::Write,
         ) -> Result<u64, justpkg_pkg::JustpkgError> {
             if url.ends_with("nar/tampered.nar") {
-                dest.write_all(&self.corrupted_nar)
-                    .map_err(|_| justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 0 })?;
+                dest.write_all(&self.corrupted_nar).map_err(|_| {
+                    justpkg_pkg::JustpkgError::Http {
+                        url: url.to_string(),
+                        status: 0,
+                    }
+                })?;
                 return Ok(self.corrupted_nar.len() as u64);
             }
-            Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+            Err(justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 404,
+            })
         }
     }
 
-    let client = TamperedNarStub { narinfo_text, corrupted_nar };
+    let client = TamperedNarStub {
+        narinfo_text,
+        corrupted_nar,
+    };
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let parent = tempfile::tempdir().unwrap();
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     let result = fetcher.build(&lock, parent.path());
 
@@ -761,7 +831,12 @@ impl ClosureMockClient {
              References:\n",
             sz = dep_nar.len(),
         );
-        ClosureMockClient { top_narinfo, dep_narinfo, top_nar, dep_nar }
+        ClosureMockClient {
+            top_narinfo,
+            dep_narinfo,
+            top_nar,
+            dep_nar,
+        }
     }
 }
 
@@ -773,7 +848,10 @@ impl justpkg_pkg::HttpClient for ClosureMockClient {
             }
             return Ok(self.top_narinfo.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+        Err(justpkg_pkg::JustpkgError::Http {
+            url: url.to_string(),
+            status: 404,
+        })
     }
 
     fn get_stream(
@@ -786,10 +864,16 @@ impl justpkg_pkg::HttpClient for ClosureMockClient {
         } else if url.ends_with("nar/top.nar") {
             &self.top_nar
         } else {
-            return Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 });
+            return Err(justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 404,
+            });
         };
         dest.write_all(bytes)
-            .map_err(|_| justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 0 })?;
+            .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 0,
+            })?;
         Ok(bytes.len() as u64)
     }
 }
@@ -806,7 +890,11 @@ fn test_build_fetches_transitive_dependency() {
     let lock = FlakeLock::from_json(MINIMAL_FLAKE_LOCK).unwrap();
     let parent = tempfile::tempdir().unwrap();
     let dest = parent.path().join("root");
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     fetcher.build(&lock, &dest).expect("build must succeed");
 
@@ -863,7 +951,11 @@ impl NoRefetchMockClient {
              References:\n",
             sz = dep_nar.len(),
         );
-        NoRefetchMockClient { top_narinfo, dep_nar, dep_narinfo }
+        NoRefetchMockClient {
+            top_narinfo,
+            dep_nar,
+            dep_narinfo,
+        }
     }
 }
 
@@ -875,7 +967,10 @@ impl justpkg_pkg::HttpClient for NoRefetchMockClient {
             }
             return Ok(self.top_narinfo.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+        Err(justpkg_pkg::JustpkgError::Http {
+            url: url.to_string(),
+            status: 404,
+        })
     }
 
     fn get_stream(
@@ -885,13 +980,14 @@ impl justpkg_pkg::HttpClient for NoRefetchMockClient {
     ) -> Result<u64, justpkg_pkg::JustpkgError> {
         if url.ends_with("nar/dep.nar") {
             dest.write_all(&self.dep_nar)
-                .map_err(|_| justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 0 })?;
+                .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                    url: url.to_string(),
+                    status: 0,
+                })?;
             return Ok(self.dep_nar.len() as u64);
         }
         // The top-level store path already existed — its NAR must NOT be requested.
-        panic!(
-            "get_stream called for pre-existing store path — must be skipped: {url}"
-        );
+        panic!("get_stream called for pre-existing store path — must be skipped: {url}");
     }
 }
 
@@ -909,14 +1005,15 @@ fn test_build_does_not_refetch_already_present_store_path() {
     let dest = parent.path().join("root");
 
     // Pre-create the top-level store path so the fetcher must skip its NAR.
-    let pre_existing_path = dest
-        .join("nix")
-        .join("store")
-        .join(pre_existing_basename);
+    let pre_existing_path = dest.join("nix").join("store").join(pre_existing_basename);
     std::fs::create_dir_all(&pre_existing_path)
         .expect("pre-creating store path directory must succeed");
 
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
     fetcher
         .build(&lock, &dest)
         .expect("build must succeed when top-level store path already exists");
@@ -998,7 +1095,10 @@ impl justpkg_pkg::HttpClient for SharedDepMockClient {
             // Any other narinfo URL → serve the shared top-level narinfo.
             return Ok(self.top_narinfo.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 })
+        Err(justpkg_pkg::JustpkgError::Http {
+            url: url.to_string(),
+            status: 404,
+        })
     }
 
     fn get_stream(
@@ -1013,10 +1113,16 @@ impl justpkg_pkg::HttpClient for SharedDepMockClient {
         } else if url.ends_with("nar/top.nar") {
             &self.top_nar
         } else {
-            return Err(justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 404 });
+            return Err(justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 404,
+            });
         };
         dest.write_all(bytes)
-            .map_err(|_| justpkg_pkg::JustpkgError::Http { url: url.to_string(), status: 0 })?;
+            .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                url: url.to_string(),
+                status: 0,
+            })?;
         Ok(bytes.len() as u64)
     }
 }
@@ -1066,7 +1172,11 @@ fn test_build_handles_shared_dependency_without_duplicate_fetch() {
         .expect("TWO_NODE_FLAKE_LOCK must parse successfully");
     let parent = tempfile::tempdir().unwrap();
     let dest = parent.path().join("root");
-    let fetcher = NixFetcher { http: &client, cache_base: DEFAULT_CACHE_BASE, token: None };
+    let fetcher = NixFetcher {
+        http: &client,
+        cache_base: DEFAULT_CACHE_BASE,
+        token: None,
+    };
 
     fetcher
         .build(&lock, &dest)

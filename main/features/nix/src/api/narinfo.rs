@@ -113,11 +113,19 @@ References: 5m9amsvvh2z8sl7jrnc87hzy21glw6k1-glibc-2.40-66 9ap0znk8zci1j8cp06wys
         // unless they also handle the bare-basename case. This test captures that contract.
         let ni = NarInfo::parse("9ap0znk8zci1j8cp06wysciy253yxk7c", SAMPLE_NARINFO).unwrap();
         assert_eq!(ni.references.len(), 2);
-        assert_eq!(ni.references[0], "5m9amsvvh2z8sl7jrnc87hzy21glw6k1-glibc-2.40-66");
-        assert_eq!(ni.references[1], "9ap0znk8zci1j8cp06wysciy253yxk7c-redis-7.2.7");
+        assert_eq!(
+            ni.references[0],
+            "5m9amsvvh2z8sl7jrnc87hzy21glw6k1-glibc-2.40-66"
+        );
+        assert_eq!(
+            ni.references[1],
+            "9ap0znk8zci1j8cp06wysciy253yxk7c-redis-7.2.7"
+        );
         // Must NOT have /nix/store/ prefix
-        assert!(!ni.references[0].starts_with("/nix/store/"),
-            "References must be bare basenames, not full store paths");
+        assert!(
+            !ni.references[0].starts_with("/nix/store/"),
+            "References must be bare basenames, not full store paths"
+        );
     }
 
     #[test]
@@ -125,6 +133,9 @@ References: 5m9amsvvh2z8sl7jrnc87hzy21glw6k1-glibc-2.40-66 9ap0znk8zci1j8cp06wys
         let text = "StorePath: /nix/store/abc-pkg\nURL: nar/x.nar.xz\nCompression: xz\n\
                     FileHash: sha256:abc\nFileSize: 1\nNarHash: sha256:def\nNarSize: 2\nReferences: \n";
         let ni = NarInfo::parse("abc", text).unwrap();
-        assert!(ni.references.is_empty(), "empty References: line must produce empty Vec");
+        assert!(
+            ni.references.is_empty(),
+            "empty References: line must produce empty Vec"
+        );
     }
 }
