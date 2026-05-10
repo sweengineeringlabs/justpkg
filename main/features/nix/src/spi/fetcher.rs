@@ -431,7 +431,7 @@ mod tests_build_store_path {
             // narinfo requests: /<hash>.narinfo
             let hash = url
                 .split('/')
-                .last()
+                .next_back()
                 .unwrap()
                 .trim_end_matches(".narinfo")
                 .to_string();
@@ -479,7 +479,7 @@ mod tests_build_store_path {
             // NAR download requests: /nar/<hash>.nar
             let hash = url
                 .split('/')
-                .last()
+                .next_back()
                 .unwrap()
                 .trim_end_matches(".nar")
                 .to_string();
