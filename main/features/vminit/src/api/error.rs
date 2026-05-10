@@ -14,6 +14,18 @@ pub enum VminitInstallError {
         source: justpkg_nix::NixFetchError,
     },
 
+    /// All substituters returned HTTP 404 for this store path.
+    #[error(
+        "'{name}' ({store_path}) not found in any cache: {caches:?}\n\
+         hint: verify the nixpkgs revision in manifest.json is reachable from these caches, \
+         or add a substituter with `--substituter <url>`"
+    )]
+    NotInAnyCache {
+        name: String,
+        store_path: String,
+        caches: Vec<String>,
+    },
+
     #[error("root layout generation failed: {reason}: {source}")]
     RootLayoutFailed {
         reason: String,

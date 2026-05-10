@@ -44,9 +44,17 @@ pub fn install_packages(
                 })?;
 
         fetch_with_fallback(http, store_path, dest_dir, subs).map_err(|source| {
-            VminitInstallError::FetchFailed {
-                name: name.to_string(),
-                source,
+            if justpkg_nix::is_not_found(&source) {
+                VminitInstallError::NotInAnyCache {
+                    name: name.to_string(),
+                    store_path: store_path.to_string(),
+                    caches: subs.iter().map(|s| s.url.clone()).collect(),
+                }
+            } else {
+                VminitInstallError::FetchFailed {
+                    name: name.to_string(),
+                    source,
+                }
             }
         })?;
     }
