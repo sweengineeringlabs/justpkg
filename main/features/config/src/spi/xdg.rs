@@ -7,7 +7,7 @@ pub fn config_search_dirs() -> Vec<std::path::PathBuf> {
     )
 }
 
-fn config_search_dirs_from(
+pub fn config_search_dirs_from(
     xdg_config_home: Option<&str>,
     xdg_config_dirs: Option<&str>,
     home: Option<&str>,
@@ -22,7 +22,8 @@ fn config_search_dirs_from(
         }
     }
     let system = xdg_config_dirs.unwrap_or("/etc/xdg");
-    for entry in system.split(':').filter(|s| !s.is_empty()) {
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    for entry in system.split(sep).filter(|s| !s.is_empty()) {
         dirs.push(entry.into());
     }
     dirs
@@ -49,6 +50,7 @@ mod tests_xdg {
         assert_eq!(dirs[0], std::path::PathBuf::from("/home/user/.config"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_config_search_dirs_from_xdg_config_dirs_appended() {
         let dirs = config_search_dirs_from(None, Some("/etc/foo:/etc/bar"), Some("/home/user"));
@@ -56,6 +58,7 @@ mod tests_xdg {
         assert!(dirs.iter().any(|d| d == std::path::Path::new("/etc/bar")));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_config_search_dirs_from_default_system_dir_when_no_xdg_config_dirs() {
         let dirs = config_search_dirs_from(None, None, None);

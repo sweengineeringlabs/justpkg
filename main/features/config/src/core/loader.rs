@@ -10,7 +10,11 @@ use crate::spi::xdg::config_search_dirs;
 /// Returns `AppConfig::default()` when no file is found. Logs a warning
 /// to stderr and continues to the next candidate on parse failure.
 pub fn load() -> AppConfig {
-    for dir in config_search_dirs() {
+    load_from_dirs(config_search_dirs())
+}
+
+fn load_from_dirs(dirs: Vec<std::path::PathBuf>) -> AppConfig {
+    for dir in dirs {
         let path = dir.join("justpkg").join("application.toml");
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
@@ -29,14 +33,16 @@ pub fn load() -> AppConfig {
 #[cfg(test)]
 mod tests_loader {
     use super::*;
+    use crate::spi::xdg::config_search_dirs_from;
 
     #[test]
     fn test_load_returns_default_when_no_config_file_exists() {
-        std::env::set_var("XDG_CONFIG_HOME", "/tmp/justpkg-nonexistent-xdg-test-dir");
-        std::env::set_var("XDG_CONFIG_DIRS", "");
-        let cfg = load();
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::remove_var("XDG_CONFIG_DIRS");
+        let dirs = config_search_dirs_from(
+            Some("/tmp/justpkg-nonexistent-xdg-test-dir"),
+            Some(""),
+            None,
+        );
+        let cfg = load_from_dirs(dirs);
         assert_eq!(
             cfg.nix.cache_base, "https://cache.nixos.org",
             "default cache_base must be cache.nixos.org when no config file is found"
@@ -53,11 +59,8 @@ mod tests_loader {
             "[nix]\ncache_base = \"https://my-cache.example.com\"\n",
         )
         .unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::set_var("XDG_CONFIG_DIRS", "");
-        let cfg = load();
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::remove_var("XDG_CONFIG_DIRS");
+        let dirs = config_search_dirs_from(Some(dir.path().to_str().unwrap()), Some(""), None);
+        let cfg = load_from_dirs(dirs);
         assert_eq!(
             cfg.nix.cache_base, "https://my-cache.example.com",
             "cache_base from application.toml must override the default"
@@ -70,11 +73,8 @@ mod tests_loader {
         let justpkg_dir = dir.path().join("justpkg");
         std::fs::create_dir_all(&justpkg_dir).unwrap();
         std::fs::write(justpkg_dir.join("application.toml"), "not valid toml }{").unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::set_var("XDG_CONFIG_DIRS", "");
-        let cfg = load();
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::remove_var("XDG_CONFIG_DIRS");
+        let dirs = config_search_dirs_from(Some(dir.path().to_str().unwrap()), Some(""), None);
+        let cfg = load_from_dirs(dirs);
         assert_eq!(
             cfg.nix.cache_base, "https://cache.nixos.org",
             "malformed TOML must fall back to default rather than panicking"
@@ -97,11 +97,12 @@ mod tests_loader {
             "[nix]\ncache_base = \"https://sys-cache.example.com\"\n",
         )
         .unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", home_dir.path());
-        std::env::set_var("XDG_CONFIG_DIRS", sys_dir.path().to_str().unwrap());
-        let cfg = load();
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::remove_var("XDG_CONFIG_DIRS");
+        let dirs = config_search_dirs_from(
+            Some(home_dir.path().to_str().unwrap()),
+            Some(sys_dir.path().to_str().unwrap()),
+            None,
+        );
+        let cfg = load_from_dirs(dirs);
         assert_eq!(
             cfg.nix.cache_base, "https://user-cache.example.com",
             "XDG_CONFIG_HOME must take precedence over XDG_CONFIG_DIRS"
