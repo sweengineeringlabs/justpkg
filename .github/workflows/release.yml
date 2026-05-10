@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            asset: pkg-x86_64-unknown-linux-musl
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            asset: pkg-x86_64-pc-windows-msvc.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get install -y musl-tools
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: >
+          cargo build --release --locked
+          --target ${{ matrix.target }}
+          -p swe_justpkg_cli
+
+      - name: Rename binary (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cp target/${{ matrix.target }}/release/pkg ${{ matrix.asset }}
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          copy target\${{ matrix.target }}\release\pkg.exe ${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Verify artifacts
+        run: ls -la pkg-*
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pkg-*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
