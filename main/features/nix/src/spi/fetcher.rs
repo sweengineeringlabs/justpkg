@@ -486,7 +486,7 @@ mod tests_build_store_path {
             self.fetched.lock().unwrap().insert(format!("nar:{hash}"));
             let nar = minimal_nar();
             let n = nar.len() as u64;
-            out.write_all(&nar).map_err(|e| JustpkgError::Io(e))?;
+            out.write_all(&nar).map_err(JustpkgError::Io)?;
             Ok(n)
         }
     }

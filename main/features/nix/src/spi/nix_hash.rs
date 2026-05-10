@@ -104,6 +104,41 @@ pub fn nar_hash_to_store_path_hash(sri: &str) -> Result<String, NixFetchError> {
     Ok(nix_base32_encode(&full_hash[..20]))
 }
 
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let bytes: Vec<u8> = s.bytes().collect();
+    let mut i = 0;
+    while i + 3 < bytes.len() {
+        let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
+        let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
+        let c = alphabet.iter().position(|&x| x == bytes[i + 2])? as u32;
+        let d = alphabet.iter().position(|&x| x == bytes[i + 3])? as u32;
+        let n = (a << 18) | (b << 12) | (c << 6) | d;
+        out.push((n >> 16) as u8);
+        out.push((n >> 8) as u8);
+        out.push(n as u8);
+        i += 4;
+    }
+    // handle remaining bytes
+    match bytes.len() - i {
+        2 => {
+            let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
+            let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
+            out.push(((a << 2) | (b >> 4)) as u8);
+        }
+        3 => {
+            let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
+            let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
+            let c = alphabet.iter().position(|&x| x == bytes[i + 2])? as u32;
+            out.push(((a << 2) | (b >> 4)) as u8);
+            out.push(((b << 4) | (c >> 2)) as u8);
+        }
+        _ => {}
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests_encode {
     use super::*;
@@ -169,39 +204,4 @@ mod tests_encode {
             "must return InvalidNixHash error, got: {err:?}"
         );
     }
-}
-
-fn base64_decode(s: &str) -> Option<Vec<u8>> {
-    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = Vec::new();
-    let bytes: Vec<u8> = s.bytes().collect();
-    let mut i = 0;
-    while i + 3 < bytes.len() {
-        let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
-        let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
-        let c = alphabet.iter().position(|&x| x == bytes[i + 2])? as u32;
-        let d = alphabet.iter().position(|&x| x == bytes[i + 3])? as u32;
-        let n = (a << 18) | (b << 12) | (c << 6) | d;
-        out.push((n >> 16) as u8);
-        out.push((n >> 8) as u8);
-        out.push(n as u8);
-        i += 4;
-    }
-    // handle remaining bytes
-    match bytes.len() - i {
-        2 => {
-            let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
-            let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
-            out.push(((a << 2) | (b >> 4)) as u8);
-        }
-        3 => {
-            let a = alphabet.iter().position(|&x| x == bytes[i])? as u32;
-            let b = alphabet.iter().position(|&x| x == bytes[i + 1])? as u32;
-            let c = alphabet.iter().position(|&x| x == bytes[i + 2])? as u32;
-            out.push(((a << 2) | (b >> 4)) as u8);
-            out.push(((b << 4) | (c >> 2)) as u8);
-        }
-        _ => {}
-    }
-    Some(out)
 }

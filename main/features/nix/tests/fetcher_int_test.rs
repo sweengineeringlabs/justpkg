@@ -45,7 +45,7 @@ fn nix_base32_sha256(data: &[u8]) -> String {
 /// Encode raw bytes in Nix's custom base-32 alphabet (mirrors nix_hash::nix_base32_encode).
 fn nix_base32_encode(bytes: &[u8]) -> String {
     const NIX_BASE32_CHARS: &[u8] = b"0123456789abcdfghijklmnpqrsvwxyz";
-    let out_len = (bytes.len() * 8 + 4) / 5;
+    let out_len = (bytes.len() * 8).div_ceil(5);
     let mut out = Vec::with_capacity(out_len);
     for n in (0..out_len).rev() {
         let b = n * 5;
