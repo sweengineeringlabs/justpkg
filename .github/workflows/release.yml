@@ -9,8 +9,44 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout sibling path-deps
+        shell: bash
+        env:
+          CI_GIT_TOKEN: ${{ secrets.CI_GIT_TOKEN }}
+        run: |
+          SHALLOW_ROOT="$(cd "$GITHUB_WORKSPACE/.." && pwd)"
+          cd "$SHALLOW_ROOT"
+          git clone --depth 1 --branch main \
+            "https://x-access-token:${CI_GIT_TOKEN}@github.com/sweengineeringlabs/justcas.git" \
+            justcas
+          git clone --depth 1 --branch dev \
+            "https://x-access-token:${CI_GIT_TOKEN}@github.com/sweengineeringlabs/filesystem.git" \
+            filesystem
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --all-targets
+
+      - name: test
+        run: cargo test --all-targets
+
   build:
     name: Build (${{ matrix.target }})
+    needs: check
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
