@@ -29,10 +29,10 @@ justpkg-vminit  = { path = "main/features/vminit",  package = "swe_justpkg_vmini
 # Content-addressed storage primitive. justpkg stores every fetched blob
 # (narinfo, compressed NAR) in the CAS keyed by its SHA-256 digest.
 # CDN is only hit on a cache miss; integrity is verified on every read.
-cas = { path = "../justcas/cas", package = "swe_justcas_cas" }
+cas = { git = "ssh://git@github.com/sweengineeringlabs/justcas.git", tag = "v0.1.0", package = "swe_justcas_cas" }
 
 # ext4 image reader — used by `justpkg verify-image` to probe binaries.
-ext4 = { path = "../filesystem/justext4/ext4", package = "swe_fs_ext4_ext4" }
+ext4 = { git = "ssh://git@github.com/sweengineeringlabs/filesystem.git", tag = "v0.2.3", package = "swe_fs_ext4_ext4" }
 
 # ── External ──────────────────────────────────────────────────────────────
 thiserror  = "2"
