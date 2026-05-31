@@ -26,10 +26,16 @@ cargo test
 cargo test -p swe_justpkg_nix
 
 # HTTP contract tests (requires network + hurl)
-bash docs/5-testing/integration/run.sh
+bash docs/5-testing/integration/harness.sh
 
-# Single Hurl file
-hurl --test docs/5-testing/integration/nix_narinfo_contract.hurl
+# Specific test only
+bash docs/5-testing/integration/harness.sh --filter nix_narinfo
+
+# Verbose output on failure
+bash docs/5-testing/integration/harness.sh --verbose
+
+# With local Attic token
+bash docs/5-testing/integration/harness.sh --attic-token "$MY_TOKEN"
 ```
 
 Install Hurl: https://hurl.dev/docs/installation.html
