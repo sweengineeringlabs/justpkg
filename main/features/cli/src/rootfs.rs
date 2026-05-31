@@ -330,20 +330,34 @@ fn write_rootfs_file(
 // ── Image sizing ──────────────────────────────────────────────────────────────
 
 /// Return `(size_blocks, inodes_per_group)` for a tree rooted at `host_root`.
-/// Uses 25% data headroom and a fixed 256-block overhead for ext4 structures.
-/// Callers that host large files (e.g. JDK) should apply additional padding.
+///
+/// Uses 25% data headroom plus proper per-group ext4 metadata overhead.
+/// The old fixed 256-block overhead constant is far too small for multi-GB images:
+/// a ~2.8 GB image has ~22 block groups each needing ~213 overhead blocks → ~4700
+/// blocks of metadata that the constant was ignoring.
 fn size_estimate(host_root: &Path) -> Result<(u32, u32), HandlerError> {
     let block_size: u64 = 4096;
+    // ext4 default: 8 bits per byte * block_size bytes = blocks per group.
+    let blocks_per_group: u64 = 8 * block_size;
 
     let (object_count, data_bytes) = walk_tree_stats(host_root)?;
 
     let inodes_needed = (object_count.saturating_mul(5) / 4).saturating_add(16);
     let inodes_per_group = inodes_needed.max(32);
 
+    // Data blocks with 25% headroom for runtime writes.
     let data_blocks = data_bytes.div_ceil(block_size).saturating_mul(5) / 4;
-    let inode_table_blocks = (inodes_per_group as u64 * 128).div_ceil(block_size);
-    let overhead_blocks: u64 = inode_table_blocks + 256;
-    let size_blocks = ((data_blocks + overhead_blocks).min(u32::MAX as u64) as u32).max(256);
+
+    // Per-group overhead: block bitmap + inode bitmap + inode table.
+    // (Superblock and GDT copies are only in select groups; 2 extra covers group 0.)
+    let inode_table_per_group = (inodes_per_group as u64 * 128).div_ceil(block_size);
+    let overhead_per_group = 2 + inode_table_per_group;
+
+    // Estimate block groups needed; +1 for the partial final group.
+    let num_groups = (data_blocks.div_ceil(blocks_per_group)).max(1);
+    let total_overhead = overhead_per_group * num_groups + 2;
+
+    let size_blocks = ((data_blocks + total_overhead).min(u32::MAX as u64) as u32).max(256);
 
     Ok((size_blocks, inodes_per_group))
 }
