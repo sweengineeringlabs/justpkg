@@ -149,7 +149,7 @@ echo ""
 
 # ── Attic substituter test ────────────────────────────────────────────────────
 echo "Attic substituter test (local instance):"
-ATTIC_HOST="${ATTIC_URL%%/*/*/*}"  # strip path to get http://host:port
+ATTIC_HOST="$(echo "$ATTIC_URL" | cut -d/ -f1-3)"  # http://host:port
 if curl -sf "$ATTIC_HOST" >/dev/null 2>&1; then
     ATTIC_ARGS=()
     [[ -n "$ATTIC_TOKEN" ]] && ATTIC_ARGS+=(--variable "attic_token=$ATTIC_TOKEN")

@@ -11,6 +11,8 @@
 # Gate: network (requires channels.nixos.org reachability)
 
 GET https://channels.nixos.org/nixos-24.11/git-revision
+[Options]
+location: true
 HTTP 200
 
 [Asserts]

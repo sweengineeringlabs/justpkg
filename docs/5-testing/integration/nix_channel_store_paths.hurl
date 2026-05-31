@@ -16,6 +16,8 @@
 # Note: response body is ~5 MB — this test only checks headers, not content.
 
 GET https://channels.nixos.org/nixos-24.11/store-paths.xz
+[Options]
+location: true
 HTTP 200
 
 [Asserts]
