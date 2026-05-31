@@ -130,13 +130,54 @@ source ~/.bashrc
 
 ---
 
+## Configuring Substituters
+
+By default justpkg fetches from `cache.nixos.org`. To use a private Attic cache — or any
+other binary cache — configure substituters in your user-level `application.toml`.
+
+**Location:**
+- Windows: `%APPDATA%\justpkg\application.toml`
+- Linux/macOS: `~/.config/justpkg/application.toml`
+
+**Example — Attic private cache with nixos.org fallback:**
+
+```toml
+[nix]
+# Attic is tried first; a 404 or connection error falls through to cache.nixos.org.
+# No --substituter flags needed on the command line when this is configured.
+
+[[nix.substituters]]
+url   = "http://127.0.0.1:8080/swe-private"
+token = "eyJ..."   # ATTIC_CI_TOKEN from packages/attic/.env
+
+[[nix.substituters]]
+url = "https://cache.nixos.org"
+```
+
+With this in place, `pkg resolve`, `pkg install`, and `pkg rootfs build` all pick
+up Attic automatically — no `--substituter` or `--substituter-token` flags needed.
+
+**Substituter fallback:** A 404 (package absent) or transport error (Attic not running)
+both advance to the next substituter silently. See `nix/src/api/error.rs: is_cache_miss()`.
+
+**Attic first-time setup:** See `packages/attic/setup.sh` to create the `swe-private`
+cache and generate tokens after the Attic VM is running.
+
+---
+
 ## Integration with vmisolate
 
-Justpkg is used in the vmisolate workload packaging pipeline to resolve and install Nix packages during rootfs builds:
+Justpkg is the package resolver and installer in the vmisolate workload packaging pipeline:
 
 ```bash
-# Example from packages/fleet/build-rootfs.sh
-pkg install packages/fleet/manifest.json $DEST
+# Pin store paths for a workload
+pkg resolve packages/opensearch/packages.toml --out packages/opensearch/manifest.json
+
+# Build the ext4 rootfs image from the [rootfs] section of packages.toml
+pkg rootfs build packages/opensearch/packages.toml
+
+# Boot the VM
+vmic run --config packages/opensearch/vm.toml
 ```
 
 See: [vmisolate Workload Packaging Pattern](../../docs/6-deployment/workload_packaging_pattern.md)

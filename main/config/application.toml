@@ -4,7 +4,20 @@
 # All keys are optional; omitted keys use the values shown here.
 
 [nix]
-# Nix binary cache base URL. justpkg appends /<hash>.narinfo and /<nar-url>.
-# Set to a private mirror (e.g. https://cache.example.com) to avoid hitting
-# the public cache.nixos.org, or to use a local cache proxy.
+# Ordered substituter list.  justpkg tries each in turn; a 404 or connection
+# error advances to the next substituter (see is_cache_miss in nix/api/error.rs).
+# When [[nix.substituters]] is non-empty, cache_base is ignored.
+#
+# Example: Attic private cache first, public nixos cache as fallback.
+# Uncomment and fill in your Attic URL and CI token.
+#
+# [[nix.substituters]]
+# url   = "http://127.0.0.1:8080/swe-private"
+# token = "eyJ..."   # ATTIC_CI_TOKEN from packages/attic/.env
+#
+# [[nix.substituters]]
+# url = "https://cache.nixos.org"
+
+# Single cache_base — used when [[nix.substituters]] is empty.
+# Ignored if [[nix.substituters]] is configured above.
 cache_base = "https://cache.nixos.org"
