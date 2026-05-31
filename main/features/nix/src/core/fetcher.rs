@@ -2,7 +2,7 @@
 //!   flake.lock → narinfo → compressed NAR → verified + extracted
 
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::Path;
 
 use cas::{Algorithm, Cas, Digest};
@@ -196,21 +196,45 @@ impl<'a> NixFetcher<'a> {
         if !extract_path.exists() {
             let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
             let mut compressed = Vec::new();
-            self.http
-                .get_stream_auth(&nar_url, self.token, &mut compressed)?;
+
+            // Print progress for large NARs (> 10 MiB). Small ones download fast
+            // enough that per-chunk updates would just be noise.
+            const PROGRESS_THRESHOLD: u64 = 10 * 1024 * 1024;
+            let label = store_basename
+                .split_once('-')
+                .map(|(_, name)| name)
+                .unwrap_or(store_basename);
+
+            if narinfo.file_size >= PROGRESS_THRESHOLD {
+                eprintln!(
+                    "[fetch] {} {:.0} MiB",
+                    label,
+                    narinfo.file_size as f64 / 1_048_576.0
+                );
+                let mut pw = ProgressWriter::new(
+                    &mut compressed,
+                    narinfo.file_size,
+                    label.to_string(),
+                );
+                self.http.get_stream_auth(&nar_url, self.token, &mut pw)?;
+                eprintln!("[done]  {}", label);
+            } else {
+                self.http
+                    .get_stream_auth(&nar_url, self.token, &mut compressed)?;
+            }
+
             let uncompressed =
                 decompress(&narinfo.compression, &compressed).map_err(NixFetchError::NarExtract)?;
             verify_nar_hash(&uncompressed, &narinfo.nar_hash)?;
 
             // Create the parent so extract_nar can write the store node.
-            // The NAR extractor handles creation of the node itself.
             let parent = extract_path
                 .parent()
                 .ok_or_else(|| NixFetchError::NarExtract("store path has no parent".to_string()))?;
             std::fs::create_dir_all(parent).map_err(|e| {
                 NixFetchError::NarExtract(format!("failed to create store parent dir: {e}"))
             })?;
-            extract_nar(std::io::Cursor::new(uncompressed), &extract_path)?;
+            extract_nar(Cursor::new(uncompressed), &extract_path)?;
         }
 
         // Recursively fetch all transitive dependencies.
@@ -279,6 +303,46 @@ fn decompress(compression: &Compression, data: &[u8]) -> Result<Vec<u8>, String>
             std::io::copy(&mut decoder, &mut out).map_err(|e| e.to_string())?;
             Ok(out)
         }
+    }
+}
+
+/// Wraps a `Vec<u8>` and prints download progress to stderr every 10 MiB.
+///
+/// Used inside `build_with_closure` for large NARs so the user can see
+/// that a slow download is progressing rather than staring at silence.
+struct ProgressWriter<'a> {
+    inner: &'a mut Vec<u8>,
+    total: u64,
+    written: u64,
+    label: String,
+    last_reported_mib: u64,
+}
+
+impl<'a> ProgressWriter<'a> {
+    fn new(inner: &'a mut Vec<u8>, total: u64, label: String) -> Self {
+        Self { inner, total, written: 0, label, last_reported_mib: 0 }
+    }
+}
+
+impl Write for ProgressWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.written += n as u64;
+        let current_mib = self.written / (10 * 1024 * 1024);
+        if current_mib > self.last_reported_mib {
+            self.last_reported_mib = current_mib;
+            eprintln!(
+                "[prog]  {} {:.0}/{:.0} MiB",
+                self.label,
+                self.written as f64 / 1_048_576.0,
+                self.total as f64 / 1_048_576.0,
+            );
+        }
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
     }
 }
 

@@ -4,12 +4,17 @@
 /// 1. Look up the Nix store path in `manifest.entries` — returns
 ///    [`VminitInstallError::PackageNotFound`] if absent.
 /// 2. Try each substituter in `substituters` order.  A `NotFound` (HTTP 404)
-///    response moves on to the next substituter; any other error aborts.
-/// 3. If no substituter has the path, returns the last `NotFound` error wrapped
-///    in [`VminitInstallError::FetchFailed`].
+///    or transport error (status 0 — cache unreachable) moves on to the next
+///    substituter; any other error aborts.
+/// 3. If no substituter has the path, returns the last error wrapped in
+///    [`VminitInstallError::NotInAnyCache`].
 ///
-/// Passing an empty `substituters` slice falls back to `cache.nixos.org` —
-/// existing call sites that do not configure substituters are unaffected.
+/// Packages are fetched in parallel — one thread per top-level entry.
+/// Transitive dependencies are fetched within each thread. The `extract_path.exists()`
+/// check inside `NixFetcher::build_with_closure` makes extraction idempotent, so
+/// shared transitive deps fetched by multiple threads concurrently are safe.
+///
+/// Passing an empty `substituters` slice falls back to `cache.nixos.org`.
 use std::path::Path;
 
 use justpkg_config::SubstituterConfig;
@@ -34,31 +39,61 @@ pub fn install_packages(
         substituters
     };
 
-    for &name in names {
-        let store_path =
+    // Resolve all store paths up-front so manifest errors surface before any I/O.
+    let entries: Vec<(&str, &str)> = names
+        .iter()
+        .map(|&name| {
             manifest
                 .entries
                 .get(name)
+                .map(|p| (name, p.as_str()))
                 .ok_or_else(|| VminitInstallError::PackageNotFound {
                     name: name.to_string(),
-                })?;
+                })
+        })
+        .collect::<Result<_, _>>()?;
 
-        fetch_with_fallback(http, store_path, dest_dir, subs).map_err(|source| {
-            if justpkg_nix::is_not_found(&source) {
-                VminitInstallError::NotInAnyCache {
-                    name: name.to_string(),
-                    store_path: store_path.to_string(),
-                    caches: subs.iter().map(|s| s.url.clone()).collect(),
-                }
-            } else {
-                VminitInstallError::FetchFailed {
-                    name: name.to_string(),
-                    source,
-                }
-            }
-        })?;
+    if entries.is_empty() {
+        return Ok(());
     }
-    Ok(())
+
+    // Fetch all packages in parallel — one thread per top-level entry.
+    // `thread::scope` guarantees all threads finish before we return, and
+    // lets us safely borrow `http`, `dest_dir`, and `subs` from this frame.
+    let results: Vec<Result<(), VminitInstallError>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = entries
+            .iter()
+            .map(|&(name, store_path)| {
+                scope.spawn(move || {
+                    fetch_with_fallback(http, store_path, dest_dir, subs).map_err(|e| {
+                        if is_not_found(&e) {
+                            VminitInstallError::NotInAnyCache {
+                                name: name.to_string(),
+                                store_path: store_path.to_string(),
+                                caches: subs.iter().map(|s| s.url.clone()).collect(),
+                            }
+                        } else {
+                            VminitInstallError::FetchFailed {
+                                name: name.to_string(),
+                                source: e,
+                            }
+                        }
+                    })
+                })
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or_else(|_| Err(VminitInstallError::FetchFailed {
+                name: "<thread-panic>".to_string(),
+                source: NixFetchError::NarExtract("fetch thread panicked".to_string()),
+            })))
+            .collect()
+    });
+
+    // Surface the first error (if any); all threads have already finished.
+    results.into_iter().find(|r| r.is_err()).unwrap_or(Ok(()))
 }
 
 /// Try each substituter in order.  Falls through on HTTP 404 (package absent)
