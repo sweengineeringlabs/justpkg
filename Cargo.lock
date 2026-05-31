@@ -1104,7 +1104,6 @@ dependencies = [
 name = "swe_justpkg_cli"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "clap",
  "dirs-next",
  "edge-domain",
@@ -1116,6 +1115,7 @@ dependencies = [
  "swe_justpkg_pkg",
  "swe_justpkg_resolve",
  "swe_justpkg_vminit",
+ "tempfile",
 ]
 
 [[package]]

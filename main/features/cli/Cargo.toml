@@ -22,7 +22,9 @@ justpkg-resolve = { workspace = true }
 justpkg-vminit  = { workspace = true }
 cas        = { workspace = true }
 ext4       = { workspace = true }
-anyhow     = { workspace = true }
 clap       = { workspace = true }
 serde_json = { workspace = true }
 dirs-next  = "2"
+
+[dev-dependencies]
+tempfile = { workspace = true }

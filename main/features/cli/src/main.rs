@@ -1,3 +1,5 @@
+mod scaffold;
+
 use clap::{Parser, Subcommand};
 use edge_domain::{HandlerError, ServiceError};
 use std::path::PathBuf;
@@ -63,6 +65,47 @@ enum Command {
         manifest: PathBuf,
         image: PathBuf,
     },
+
+    /// Scaffold a new workload package directory
+    ///
+    /// Creates packages/<name>/{packages.toml,build-rootfs.sh,vm.toml} in the
+    /// current directory.  Fails if packages/<name> already exists.
+    ///
+    /// Examples:
+    ///   pkg new redis --port 6379:6379
+    ///   pkg new opensearch --non-root 1000 --port 9200:9200 --port 9300:9300 --memory 1024
+    New {
+        /// Workload name (becomes the directory and file prefix)
+        name: String,
+        /// UID/GID for the non-root user the workload runs as.
+        /// Adds /etc/passwd, /etc/group, data dirs, and justext4 chown steps.
+        #[arg(long)]
+        non_root: Option<u32>,
+        /// Port mapping in HOST:GUEST format (repeatable)
+        #[arg(long = "port")]
+        ports: Vec<PortMapping>,
+        /// Guest memory in MiB
+        #[arg(long, default_value_t = 512)]
+        memory: u32,
+        /// Number of vCPUs
+        #[arg(long, default_value_t = 1)]
+        vcpus: u32,
+    },
+}
+
+#[derive(Clone)]
+struct PortMapping(u16, u16);
+
+impl std::str::FromStr for PortMapping {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (host, guest) = s
+            .split_once(':')
+            .ok_or_else(|| format!("expected HOST:GUEST, got {s:?}"))?;
+        let host = host.parse::<u16>().map_err(|e| format!("invalid host port: {e}"))?;
+        let guest = guest.parse::<u16>().map_err(|e| format!("invalid guest port: {e}"))?;
+        Ok(PortMapping(host, guest))
+    }
 }
 
 fn main() {
@@ -183,6 +226,43 @@ fn run() -> Result<(), HandlerError> {
                 VminitInstaller::with_substituters(&http, pkg_manifest, effective_subs);
             installer.install(&names, &dest_dir).map_err(svc_to_handler)?;
             eprintln!("installed {} package(s) → {}", names.len(), dest_dir.display());
+        }
+
+        Command::New { name, non_root, ports, memory, vcpus } => {
+            let cfg = scaffold::ScaffoldConfig {
+                name,
+                non_root,
+                ports: ports.into_iter().map(|p| (p.0, p.1)).collect(),
+                memory_mb: memory,
+                vcpus,
+            };
+            scaffold::scaffold(&cfg, std::path::Path::new("."))?;
+            eprintln!(
+                "created packages/{name}/{{packages.toml,build-rootfs.sh,vm.toml}}",
+                name = cfg.name
+            );
+            eprintln!();
+            eprintln!("Next steps:");
+            eprintln!(
+                "  1. Edit packages/{name}/packages.toml — add your workload packages",
+                name = cfg.name
+            );
+            eprintln!(
+                "  2. pkg resolve packages/{name}/packages.toml --out packages/{name}/manifest.json",
+                name = cfg.name
+            );
+            eprintln!(
+                "  3. Edit packages/{name}/build-rootfs.sh — implement the entrypoint wrapper",
+                name = cfg.name
+            );
+            eprintln!(
+                "  4. bash packages/{name}/build-rootfs.sh",
+                name = cfg.name
+            );
+            eprintln!(
+                "  5. vmic run --config packages/{name}/vm.toml",
+                name = cfg.name
+            );
         }
 
         Command::VerifyImage { manifest, image } => {
