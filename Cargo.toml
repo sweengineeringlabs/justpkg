@@ -26,7 +26,8 @@ justpkg-resolve = { path = "main/features/resolve", package = "swe_justpkg_resol
 justpkg-vminit  = { path = "main/features/vminit",  package = "swe_justpkg_vminit"  }
 
 # ── Edge framework
-edge-domain = { git = "ssh://git@github.com/sweengineeringlabs/edge.git", tag = "v0.6.0", package = "edge-domain" }
+edge-domain        = { git = "ssh://git@github.com/sweengineeringlabs/edge.git", tag = "v0.6.0", package = "edge-domain" }
+edge-configbuilder = { git = "ssh://git@github.com/sweengineeringlabs/edge.git", tag = "v0.6.0", package = "swe-edge-configbuilder" }
 
 # ── Cross-repo siblings ───────────────────────────────────────────────────
 # Content-addressed storage primitive. justpkg stores every fetched blob
