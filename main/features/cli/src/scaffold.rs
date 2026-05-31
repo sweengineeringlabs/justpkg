@@ -179,30 +179,15 @@ command -v jq >/dev/null 2>&1 \
 "#);
     }
 
-    // Attic substituter block
+    // Substituters are configured in ~/.config/justpkg/application.toml — no per-script block needed.
     s.push_str(r#"
-# ── Attic substituter (optional) ─────────────────────────────────────────────
-ATTIC_URL="${ATTIC_URL:-http://127.0.0.1:8080/swe-private}"
-ATTIC_CI_TOKEN="${ATTIC_CI_TOKEN:-}"
-
-if [[ -z "$ATTIC_CI_TOKEN" && -f "$REPO_ROOT/packages/attic/.env" ]]; then
-    # shellcheck source=/dev/null
-    source "$REPO_ROOT/packages/attic/.env"
-    ATTIC_CI_TOKEN="${ATTIC_CI_TOKEN:-}"
-fi
-
-SUBSTITUTER_ARGS=()
-if [[ -n "$ATTIC_CI_TOKEN" ]]; then
-    SUBSTITUTER_ARGS+=(--substituter "$ATTIC_URL" --substituter-token "$ATTIC_CI_TOKEN")
-fi
-
 # ── Install packages ──────────────────────────────────────────────────────────
 
 DEST=$(mktemp -d)
 trap 'rm -rf "$DEST"' EXIT
 
 echo "==> Installing packages to $DEST..."
-"$JUSTPKG_BIN" install "$MANIFEST" "$DEST" "${SUBSTITUTER_ARGS[@]}"
+"$JUSTPKG_BIN" install "$MANIFEST" "$DEST"
 
 echo "==> Nix store roots:"
 ls "$DEST/nix/store/"
