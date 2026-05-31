@@ -26,9 +26,25 @@ pub enum NixFetchError {
     Core(#[from] PkgError),
 }
 
-/// Returns `true` if `e` indicates the store path was absent from the cache.
+/// Returns `true` if `e` indicates the store path was absent from the cache (HTTP 404).
 pub fn is_not_found(e: &NixFetchError) -> bool {
     matches!(e, NixFetchError::NotFound { .. })
+}
+
+/// Returns `true` if `e` is a cache miss that warrants trying the next substituter.
+///
+/// This covers two cases:
+/// - HTTP 404 (`NotFound`) — the package is simply not in this cache.
+/// - Transport error / status 0 (`Core(PkgError::Http { status: 0 })`) — the cache
+///   is unreachable (connection refused, TLS error, timeout).  Falling back is correct
+///   because the next substituter may be reachable even when a private Attic instance
+///   is down.
+pub fn is_cache_miss(e: &NixFetchError) -> bool {
+    match e {
+        NixFetchError::NotFound { .. } => true,
+        NixFetchError::Core(justpkg_pkg::PkgError::Http { status: 0, .. }) => true,
+        _ => false,
+    }
 }
 
 impl From<NixFetchError> for ServiceError {

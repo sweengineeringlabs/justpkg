@@ -13,7 +13,7 @@
 use std::path::Path;
 
 use justpkg_config::SubstituterConfig;
-use justpkg_nix::{is_not_found, NixFetchError, NixFetcher, DEFAULT_CACHE_BASE};
+use justpkg_nix::{is_cache_miss, is_not_found, NixFetchError, NixFetcher, DEFAULT_CACHE_BASE};
 use justpkg_pkg::HttpClient;
 
 use crate::api::error::VminitInstallError;
@@ -61,8 +61,9 @@ pub fn install_packages(
     Ok(())
 }
 
-/// Try each substituter in order.  Returns on the first success or first
-/// non-404 error.  Falls through to the next substituter only on HTTP 404.
+/// Try each substituter in order.  Falls through on HTTP 404 (package absent)
+/// or transport errors / status 0 (cache unreachable — e.g. Attic not running).
+/// Any other error (500, auth failure, etc.) aborts immediately.
 fn fetch_with_fallback(
     http: &dyn HttpClient,
     store_path: &str,
@@ -78,7 +79,7 @@ fn fetch_with_fallback(
         };
         match fetcher.build_store_path(store_path, dest_dir) {
             Ok(()) => return Ok(()),
-            Err(e) if is_not_found(&e) => {
+            Err(e) if is_cache_miss(&e) => {
                 last_err = Some(e);
             }
             Err(e) => return Err(e),
