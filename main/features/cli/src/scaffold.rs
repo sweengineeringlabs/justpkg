@@ -207,16 +207,7 @@ echo "==> Installing packages to $DEST..."
 echo "==> Nix store roots:"
 ls "$DEST/nix/store/"
 
-# ── /bin/sh wrapper ───────────────────────────────────────────────────────────
-# Cannot use a symlink: justext4 skips symlinks with targets > 60 bytes.
-# Tracked: https://github.com/sweengineeringlabs/filesystem/issues/7
-
 mkdir -p "$DEST/bin"
-if [[ ! -e "$DEST/bin/sh" ]]; then
-    printf '#!/%s/bin/bash\nexec %s/bin/bash "$@"\n' \
-        "$BASH_STORE" "$BASH_STORE" > "$DEST/bin/sh"
-    chmod +x "$DEST/bin/sh"
-fi
 "#);
 
     // Non-root: users, groups, directories
@@ -297,6 +288,10 @@ echo "==> Image params: $SIZE_ARGS"
 "$JUSTEXT4_BIN" build-from-tree "$DEST" "$IMAGE" $SIZE_ARGS
 
 echo "==> Image size: $(du -sh "$IMAGE" | cut -f1)"
+
+# ── /bin/sh symlink ───────────────────────────────────────────────────────────
+# justext4 symlink stores targets > 60 bytes in a data block (slow-symlink path).
+"$JUSTEXT4_BIN" symlink "$IMAGE" /bin/sh "$BASH_STORE/bin/bash"
 "#,
         name,
     ));
@@ -426,6 +421,22 @@ mod tests {
         assert!(dir.path().join("packages/myapp/packages.toml").exists());
         assert!(dir.path().join("packages/myapp/build-rootfs.sh").exists());
         assert!(dir.path().join("packages/myapp/vm.toml").exists());
+    }
+
+    #[test]
+    fn test_scaffold_generates_bin_sh_symlink_via_justext4() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = simple_cfg("myapp");
+        scaffold(&cfg, dir.path()).unwrap();
+        let sh = fs::read_to_string(dir.path().join("packages/myapp/build-rootfs.sh")).unwrap();
+        assert!(
+            sh.contains("symlink \"$IMAGE\" /bin/sh \"$BASH_STORE/bin/bash\""),
+            "build-rootfs.sh must create /bin/sh via justext4 symlink (not a wrapper script)"
+        );
+        assert!(
+            !sh.contains("printf '#!/"),
+            "build-rootfs.sh must not contain a wrapper script — use justext4 symlink instead"
+        );
     }
 
     #[test]
