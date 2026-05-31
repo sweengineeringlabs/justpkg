@@ -8,12 +8,15 @@
 #   bash docs/5-testing/integration/harness.sh [OPTIONS]
 #
 # Options:
-#   --filter PATTERN   only run files whose name matches PATTERN (grep -E)
-#   --attic-token TOK  Bearer token for the local Attic cache
-#                      (default: read from packages/attic/.env)
-#   --attic-url URL    Attic base URL (default: http://127.0.0.1:8080/swe-private)
-#   --verbose          pass --verbose to hurl (shows request/response detail)
-#   --keep-tmp         do not delete the temp report directory after the run
+#   --filter PATTERN        only run files whose name matches PATTERN (grep -E)
+#   --attic-token TOK       Bearer token for the local Attic cache
+#                           (default: read from packages/attic/.env)
+#   --attic-url URL         Attic base URL (default: http://127.0.0.1:8080/swe-private)
+#   --attic-known-hash HASH 32-char Nix base32 hash known to be in Attic (enables
+#                           positive narinfo contract test); auto-detected from
+#                           packages/fleet/manifest.json when Attic is running
+#   --verbose               pass --verbose to hurl (shows request/response detail)
+#   --keep-tmp              do not delete the temp report directory after the run
 
 set -euo pipefail
 
@@ -23,17 +26,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FILTER=""
 ATTIC_TOKEN=""
 ATTIC_URL="http://127.0.0.1:8080/swe-private"
+ATTIC_KNOWN_HASH=""
 VERBOSE=false
 KEEP_TMP=false
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --filter)      FILTER="$2";      shift 2 ;;
-        --attic-token) ATTIC_TOKEN="$2"; shift 2 ;;
-        --attic-url)   ATTIC_URL="$2";   shift 2 ;;
-        --verbose)     VERBOSE=true;     shift   ;;
-        --keep-tmp)    KEEP_TMP=true;    shift   ;;
+        --filter)           FILTER="$2";           shift 2 ;;
+        --attic-token)      ATTIC_TOKEN="$2";      shift 2 ;;
+        --attic-url)        ATTIC_URL="$2";        shift 2 ;;
+        --attic-known-hash) ATTIC_KNOWN_HASH="$2"; shift 2 ;;
+        --verbose)          VERBOSE=true;           shift   ;;
+        --keep-tmp)         KEEP_TMP=true;          shift   ;;
         *) echo "error: unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -97,7 +102,8 @@ PASS=0
 FAIL=0
 SKIP=0
 
-HURL_ARGS=(--test)
+# Bounded timeouts so a flaky upstream doesn't hang the whole run.
+HURL_ARGS=(--test --connect-timeout 10 --max-time 30)
 [[ "$VERBOSE" == "true" ]] && HURL_ARGS+=(--verbose)
 
 run_test() {
@@ -121,10 +127,11 @@ run_test() {
     else
         echo "  FAIL $name"
         FAIL=$((FAIL + 1))
-        # On failure, re-run verbosely so the caller can see what went wrong
+        # On failure, re-run verbosely so the caller can see what went wrong.
         if [[ "$VERBOSE" == "false" ]]; then
             echo ""
-            hurl --test --verbose "${extra_args[@]}" "$file" 2>&1 | sed 's/^/       /' || true
+            hurl --test --verbose --connect-timeout 10 --max-time 30 \
+                "${extra_args[@]}" "$file" 2>&1 | sed 's/^/       /' || true
             echo ""
         fi
     fi
@@ -147,15 +154,43 @@ run_test "$SCRIPT_DIR/nix_channel_store_paths.hurl"
 run_test "$SCRIPT_DIR/nix_narinfo_contract.hurl"
 echo ""
 
-# ── Attic substituter test ────────────────────────────────────────────────────
-echo "Attic substituter test (local instance):"
+# ── Attic substituter tests ───────────────────────────────────────────────────
+echo "Attic substituter tests (local instance):"
 ATTIC_HOST="$(echo "$ATTIC_URL" | cut -d/ -f1-3)"  # http://host:port
-if curl -sf "$ATTIC_HOST" >/dev/null 2>&1; then
-    ATTIC_ARGS=()
-    [[ -n "$ATTIC_TOKEN" ]] && ATTIC_ARGS+=(--variable "attic_token=$ATTIC_TOKEN")
+
+if curl -sf --connect-timeout 3 "$ATTIC_HOST" >/dev/null 2>&1; then
+    # Always pass attic_token so {{attic_token}} in .hurl files never errors
+    # on "undefined variable" — even when the cache is public / unauthed.
+    ATTIC_ARGS=(--variable "attic_token=${ATTIC_TOKEN:-}")
+
+    # 404 path: Attic must return 404 for an absent hash so pkg falls back.
     run_test "$SCRIPT_DIR/attic_substituter.hurl" "${ATTIC_ARGS[@]}"
+
+    # Positive path: Attic must return a parseable narinfo for a present hash.
+    # Auto-detect from packages/fleet/manifest.json if --attic-known-hash not given.
+    if [[ -z "$ATTIC_KNOWN_HASH" ]]; then
+        FLEET_MANIFEST="$REPO_ROOT/packages/fleet/manifest.json"
+        if command -v jq &>/dev/null && [[ -f "$FLEET_MANIFEST" ]]; then
+            BASH_PATH=$(jq -r '.packages.bash // empty' "$FLEET_MANIFEST")
+            if [[ -n "$BASH_PATH" ]]; then
+                # /nix/store/<32-char-hash>-bash-x.y → first 32 chars after last /
+                ATTIC_KNOWN_HASH=$(basename "$BASH_PATH" | cut -c1-32)
+            fi
+        fi
+    fi
+
+    if [[ -n "$ATTIC_KNOWN_HASH" ]]; then
+        run_test "$SCRIPT_DIR/attic_narinfo_positive.hurl" \
+            "${ATTIC_ARGS[@]}" \
+            --variable "attic_url=$ATTIC_URL" \
+            --variable "attic_hash=$ATTIC_KNOWN_HASH"
+    else
+        skip_test "attic_narinfo_positive" \
+            "no known hash — pass --attic-known-hash or ensure packages/fleet/manifest.json exists"
+    fi
 else
-    skip_test "attic_substituter" "Attic not running at $ATTIC_HOST — start with: bash packages/attic/run.sh"
+    skip_test "attic_substituter"      "Attic not running at $ATTIC_HOST — start with: bash packages/attic/run.sh"
+    skip_test "attic_narinfo_positive" "Attic not running at $ATTIC_HOST"
 fi
 echo ""
 
