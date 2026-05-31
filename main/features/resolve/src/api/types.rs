@@ -89,6 +89,11 @@ pub struct RootfsSpec {
     /// TOML key: `[[rootfs.file]]`.
     #[serde(default, rename = "file")]
     pub files: Vec<FileSpec>,
+
+    /// Pre-built binaries to inject into the image from the host filesystem.
+    /// TOML key: `[[rootfs.binary]]`.
+    #[serde(default, rename = "binary")]
+    pub binaries: Vec<BinarySpec>,
 }
 
 /// A non-root user entry for `/etc/passwd` and `/etc/group`.
@@ -131,6 +136,31 @@ pub struct FileSpec {
 
 fn default_file_mode() -> u32 {
     0o755
+}
+
+/// A pre-built binary to inject into the image from the host filesystem.
+///
+/// Unlike `[[rootfs.file]]`, the source is an existing file on the host —
+/// no content generation or placeholder expansion. Use for ELF executables
+/// and shared libraries that are built outside Nix (e.g. `fleetd` and its
+/// runtime `.so` files).
+///
+/// ```toml
+/// [[rootfs.binary]]
+/// path   = "/usr/local/bin/fleetd"
+/// source = "fleetd"                  # relative to packages.toml directory
+/// mode   = 0o755                     # optional; auto-detected from ELF/shebang if absent
+/// ```
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinarySpec {
+    /// Absolute VFS path in the image, e.g. `"/usr/local/bin/fleetd"`.
+    pub path: String,
+    /// Host filesystem path. Resolved relative to the `packages.toml` directory
+    /// when not absolute.
+    pub source: String,
+    /// POSIX permission bits. Auto-detected from ELF magic / shebang when absent.
+    #[serde(default)]
+    pub mode: Option<u32>,
 }
 
 // ── Output: manifest.json ────────────────────────────────────────────────────

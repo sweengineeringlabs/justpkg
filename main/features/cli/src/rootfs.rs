@@ -14,7 +14,7 @@ use ext4::{format as fs_format, Config, Ext4Error, Filesystem};
 use justpkg_config::{AppConfig, SubstituterConfig};
 use justpkg_vminit::{parse_manifest, VminitInstaller};
 use justpkg_pkg::UreqClient;
-use justpkg_resolve::{FileSpec, UserSpec};
+use justpkg_resolve::{BinarySpec, FileSpec, UserSpec};
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
@@ -50,6 +50,11 @@ pub fn build_rootfs(
     for file in &rootfs.files {
         validate_vfs_path(&file.path).map_err(|e| {
             HandlerError::InvalidRequest(format!("[[rootfs.file]] {}: {e}", file.path))
+        })?;
+    }
+    for binary in &rootfs.binaries {
+        validate_vfs_path(&binary.path).map_err(|e| {
+            HandlerError::InvalidRequest(format!("[[rootfs.binary]] {}: {e}", binary.path))
         })?;
     }
 
@@ -145,6 +150,11 @@ pub fn build_rootfs(
     let store_paths = &pkg_manifest.entries;
     for file in &rootfs.files {
         write_rootfs_file(dest_path, file, store_paths)?;
+    }
+
+    // ── 10a. Pre-built binaries ───────────────────────────────────────────────
+    for binary in &rootfs.binaries {
+        write_rootfs_binary(dest_path, manifest_dir, binary)?;
     }
 
     // ── 11. Build ext4 image ─────────────────────────────────────────────────
@@ -321,6 +331,69 @@ fn write_rootfs_file(
         std::fs::set_permissions(&host_path, std::fs::Permissions::from_mode(file.mode))
             .map_err(|e| {
                 HandlerError::ExecutionFailed(format!("chmod {}: {e}", file.path))
+            })?;
+    }
+
+    Ok(())
+}
+
+// ── Pre-built binary injection ────────────────────────────────────────────────
+
+/// Copy a pre-built binary from the host filesystem into the rootfs temp tree.
+///
+/// `packages_dir` is the directory that contains `packages.toml`; relative
+/// `source` paths are resolved against it so callers can use bare filenames
+/// (e.g. `source = "libcrypto.so.3"`) for files sitting alongside the TOML.
+fn write_rootfs_binary(
+    dest_root: &Path,
+    packages_dir: &Path,
+    binary: &BinarySpec,
+) -> Result<(), HandlerError> {
+    let source_path = {
+        let p = Path::new(&binary.source);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            packages_dir.join(p)
+        }
+    };
+
+    if !source_path.exists() {
+        return Err(HandlerError::InvalidRequest(format!(
+            "[[rootfs.binary]] source not found: {} (resolved from {:?})",
+            binary.source,
+            source_path
+        )));
+    }
+
+    let bytes = std::fs::read(&source_path).map_err(|e| {
+        HandlerError::ExecutionFailed(format!("read {}: {e}", source_path.display()))
+    })?;
+
+    let host_path = dest_root.join(binary.path.trim_start_matches('/'));
+    if let Some(parent) = host_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            HandlerError::ExecutionFailed(format!("mkdir parent of {}: {e}", binary.path))
+        })?;
+    }
+
+    std::fs::write(&host_path, &bytes).map_err(|e| {
+        HandlerError::ExecutionFailed(format!("write {}: {e}", binary.path))
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = binary.mode.unwrap_or_else(|| {
+            if bytes.starts_with(b"\x7fELF") || bytes.starts_with(b"#!") {
+                0o755
+            } else {
+                0o644
+            }
+        });
+        std::fs::set_permissions(&host_path, std::fs::Permissions::from_mode(mode))
+            .map_err(|e| {
+                HandlerError::ExecutionFailed(format!("chmod {}: {e}", binary.path))
             })?;
     }
 
@@ -716,5 +789,130 @@ content = "#!/bin/sh\necho hi"
         // "..hidden" is a valid filename; only the bare ".." component is rejected.
         assert!(validate_vfs_path("/var/lib/..hidden").is_ok());
         assert!(validate_vfs_path("/etc/file..cfg").is_ok());
+    }
+
+    // ── [[rootfs.binary]] parsing ─────────────────────────────────────────────
+
+    #[test]
+    fn test_rootfs_binary_parses_with_explicit_mode() {
+        let toml = r##"
+nixpkgs_channel = "nixos-24.11"
+[[package]]
+name = "bash"
+attr = "bash"
+[rootfs]
+image_out = "out.ext4"
+[[rootfs.binary]]
+path   = "/usr/local/bin/fleetd"
+source = "fleetd"
+mode   = 493
+"##;
+        let spec: justpkg_resolve::PackagesSpec = toml::from_str(toml).unwrap();
+        let rootfs = spec.rootfs.unwrap();
+        assert_eq!(rootfs.binaries.len(), 1);
+        let b = &rootfs.binaries[0];
+        assert_eq!(b.path, "/usr/local/bin/fleetd");
+        assert_eq!(b.source, "fleetd");
+        assert_eq!(b.mode, Some(0o755));
+    }
+
+    #[test]
+    fn test_rootfs_binary_mode_defaults_to_none() {
+        let toml = r##"
+nixpkgs_channel = "nixos-24.11"
+[[package]]
+name = "bash"
+attr = "bash"
+[rootfs]
+image_out = "out.ext4"
+[[rootfs.binary]]
+path   = "/lib/x86_64-linux-gnu/libcrypto.so.3"
+source = "libcrypto.so.3"
+"##;
+        let spec: justpkg_resolve::PackagesSpec = toml::from_str(toml).unwrap();
+        let b = &spec.rootfs.unwrap().binaries[0];
+        assert!(b.mode.is_none(), "mode must be None when absent from TOML");
+    }
+
+    #[test]
+    fn test_rootfs_binary_absent_when_no_binary_section() {
+        let toml = r##"
+nixpkgs_channel = "nixos-24.11"
+[[package]]
+name = "bash"
+attr = "bash"
+[rootfs]
+image_out = "out.ext4"
+"##;
+        let spec: justpkg_resolve::PackagesSpec = toml::from_str(toml).unwrap();
+        assert!(spec.rootfs.unwrap().binaries.is_empty());
+    }
+
+    #[test]
+    fn test_rootfs_binary_multiple_entries() {
+        let toml = r##"
+nixpkgs_channel = "nixos-24.11"
+[[package]]
+name = "bash"
+attr = "bash"
+[rootfs]
+image_out = "out.ext4"
+[[rootfs.binary]]
+path   = "/usr/local/bin/fleetd"
+source = "fleetd"
+[[rootfs.binary]]
+path   = "/lib/x86_64-linux-gnu/libssl.so.3"
+source = "libssl.so.3"
+[[rootfs.binary]]
+path   = "/lib/x86_64-linux-gnu/libcrypto.so.3"
+source = "libcrypto.so.3"
+"##;
+        let spec: justpkg_resolve::PackagesSpec = toml::from_str(toml).unwrap();
+        let binaries = &spec.rootfs.unwrap().binaries;
+        assert_eq!(binaries.len(), 3);
+        assert_eq!(binaries[0].path, "/usr/local/bin/fleetd");
+        assert_eq!(binaries[1].path, "/lib/x86_64-linux-gnu/libssl.so.3");
+        assert_eq!(binaries[2].path, "/lib/x86_64-linux-gnu/libcrypto.so.3");
+    }
+
+    #[test]
+    fn test_write_rootfs_binary_copies_file_to_dest_tree() {
+        use std::io::Write;
+        let src_dir = tempfile::tempdir().unwrap();
+        let dest_dir = tempfile::tempdir().unwrap();
+
+        // Write a fake ELF-magic binary to the source dir.
+        let src_file = src_dir.path().join("mybin");
+        let mut f = std::fs::File::create(&src_file).unwrap();
+        f.write_all(b"\x7fELFfakebinarycontents").unwrap();
+
+        let binary = BinarySpec {
+            path: "/usr/local/bin/mybin".to_string(),
+            source: "mybin".to_string(),
+            mode: Some(0o755),
+        };
+
+        write_rootfs_binary(dest_dir.path(), src_dir.path(), &binary)
+            .expect("write_rootfs_binary must succeed");
+
+        let written = std::fs::read(dest_dir.path().join("usr/local/bin/mybin")).unwrap();
+        assert_eq!(written, b"\x7fELFfakebinarycontents");
+    }
+
+    #[test]
+    fn test_write_rootfs_binary_errors_when_source_missing() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let dest_dir = tempfile::tempdir().unwrap();
+
+        let binary = BinarySpec {
+            path: "/usr/local/bin/ghost".to_string(),
+            source: "ghost".to_string(),
+            mode: None,
+        };
+
+        let result = write_rootfs_binary(dest_dir.path(), src_dir.path(), &binary);
+        assert!(result.is_err(), "must fail when source file does not exist");
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(msg.contains("source not found") || msg.contains("ghost"));
     }
 }
