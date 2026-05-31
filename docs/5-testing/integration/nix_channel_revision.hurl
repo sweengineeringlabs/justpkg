@@ -1,9 +1,16 @@
 # Contract test: NixOS channel git-revision endpoint
 #
-# What this validates:
-#   pkg resolve fetches this endpoint to pin the nixpkgs revision in manifest.json.
-#   If channels.nixos.org changes the URL scheme or response format, all pkg resolve
-#   invocations would fail with a cryptic error.  This test catches that early.
+# Flow:
+#   1. pkg resolve reads packages.toml → determines channel (e.g. nixos-24.11)
+#   2. GET {channel_base}/{channel}/git-revision (follows redirect)
+#   3. Response is a 40-char lowercase hex git SHA (the nixpkgs commit pinned to this channel)
+#   4. SHA is stored in manifest.json as meta.nixpkgs_rev for reproducibility
+#   5. All subsequent resolution in this run uses the pinned revision
+#
+# Breaks if:
+#   - channels.nixos.org changes URL scheme → ResolveError::ChannelFetch on every pkg resolve
+#   - Response format changes (not a bare hex SHA) → revision pinning silently writes garbage
+#   - Redirect chain changes and follow fails → pkg resolve returns connection error
 #
 # Run:
 #   hurl --test nix_channel_revision.hurl

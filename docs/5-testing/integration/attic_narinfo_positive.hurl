@@ -1,11 +1,19 @@
 # Contract test: Attic returns a valid narinfo for a known-present store hash
 #
-# What this validates:
-#   The 404 test proves Attic handles cache misses correctly so pkg falls back.
-#   This test proves the happy path: when a hash IS in Attic, the response shape
-#   is a valid narinfo that justpkg_nix::NarInfo::parse() can consume.
-#   If Attic changed its narinfo format, pkg install would silently fail to
-#   parse packages even though the cache was reachable — this test catches that.
+# Flow:
+#   1. pkg install: Attic is the first substituter; GET {attic_url}/{hash}.narinfo
+#   2. Hash IS present → Attic returns 200 with a narinfo body
+#   3. NarInfo::parse() processes it identically to a cache.nixos.org narinfo
+#      (same parser, same required fields — Attic is a drop-in narinfo server)
+#   4. URL field may be an Attic-served NAR path or a redirect to the upstream NAR
+#   5. pkg downloads and verifies the NAR; install completes from Attic, not nixos cache
+#   Pair with attic_substituter.hurl (404 path) to cover both substituter outcomes.
+#
+# Breaks if:
+#   - Attic narinfo format diverges from cache.nixos.org → NarInfo::parse() fails
+#     even though the package is cached → Attic cache is never used, all hits fall through
+#   - Authorization header format changes → 401/403 → is_cache_miss() = false → abort
+#   - Missing FileHash field → hash verification skipped → silent corruption risk
 #
 # Variables (injected by harness.sh):
 #   attic_url   — Attic cache base URL, e.g. http://127.0.0.1:8080/swe-private

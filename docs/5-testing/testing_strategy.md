@@ -12,7 +12,7 @@
 | **Integration** | `tests/*_int_test.rs` | `cargo test` | every commit | Cross-module wiring, substituter fallback, manifest round-trips |
 | **Security** | `tests/*_security_test.rs` | `cargo test` | every commit | Path traversal, null bytes, adversarial input |
 | **HTTP contract** | `docs/5-testing/integration/*.hurl` | `hurl` | `network` | External API shape changes (narinfo format, channel endpoints) |
-| **Scaffold smoke** | Manual | `pkg new` + `bash` | pre-release | Generated scripts are correct and runnable |
+| **Scaffold smoke** | Manual | `pkg new` + `pkg rootfs build` | pre-release | Generated packages.toml produces a bootable ext4 image |
 
 ---
 
@@ -38,7 +38,8 @@ bash docs/5-testing/integration/harness.sh --verbose
 bash docs/5-testing/integration/harness.sh --attic-token "$MY_TOKEN"
 ```
 
-Install Hurl: https://hurl.dev/docs/installation.html
+The harness auto-installs missing prerequisites (hurl, jq, curl) on first run.
+Pass `--no-install` to abort instead of auto-installing.
 
 ---
 
@@ -50,9 +51,16 @@ if an external service changes its API shape:
 | Request | URL pattern | Hurl file |
 |---|---|---|
 | Narinfo fetch | `<cache>/<hash>.narinfo` | `nix_narinfo_contract.hurl` |
+| NAR download | `<cache>/<URL from narinfo>` | `nix_nar_download.hurl` |
 | Channel revision | `<channel_base>/<channel>/git-revision` | `nix_channel_revision.hurl` |
 | Store paths index | `<channel_base>/<channel>/store-paths.xz` | `nix_channel_store_paths.hurl` |
-| Attic cache | `<attic_url>/<hash>.narinfo` | `attic_substituter.hurl` |
+| Attic cache miss | `<attic_url>/<absent-hash>.narinfo` | `attic_substituter.hurl` |
+| Attic cache hit | `<attic_url>/<present-hash>.narinfo` | `attic_narinfo_positive.hurl` |
+
+`nix_nar_download.hurl` is a two-step test: it captures the `URL` field from a live
+narinfo response, then downloads and validates the actual NAR. This exercises the exact
+URL-joining logic pkg uses — a malformed join would produce a 404 here before any
+real install is attempted.
 
 These are **read-only contract tests** — they assert response shape, not
 content. They run against the live cache and are skipped in CI unless the
@@ -70,6 +78,7 @@ content. They run against the live cache and are skipped in CI unless the
 | `vminit` | — | ✅ install packages, root layout | ✅ adversarial package names | |
 | `config` | ✅ XDG loader, TOML parsing | — | — | |
 | `cli` | ✅ scaffold generation | — | — | `pkg new` tested via tempdir |
+| `rootfs` (planned #6) | TOML schema parsing | rootfs build end-to-end | path traversal in file entries | pending `pkg rootfs build` implementation |
 
 ---
 
@@ -95,10 +104,11 @@ and register the file in the crate's `Cargo.toml` as a `[[test]]` entry if it
 lives outside `src/`.
 
 ### Hurl test
-Add a `.hurl` file to `docs/5-testing/integration/`. Register it in `run.sh`
-so it is discovered automatically. Each file must have a comment header
-explaining which external contract it validates and what would break if the
-test failed.
+Add a `.hurl` file to `docs/5-testing/integration/` and register it in `harness.sh`.
+Each file must open with a `# Flow:` block that narrates the exact sequence of HTTP
+calls `pkg` makes that this test validates, followed by a `# Breaks if:` block listing
+what real failures the test would catch. Without both blocks the test is documentation-free
+and will be rejected in review.
 
 ---
 
@@ -106,6 +116,6 @@ test failed.
 
 ```
 Every commit:   cargo test (unit + integration + security)
-network gate:   hurl --test docs/5-testing/integration/*.hurl
-pre-release:    pkg new smoke test + pkg resolve + bash build-rootfs.sh
+network gate:   bash docs/5-testing/integration/harness.sh
+pre-release:    pkg new <name> && pkg rootfs build packages/<name>/packages.toml
 ```
