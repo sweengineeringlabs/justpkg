@@ -1,3 +1,4 @@
+mod rootfs;
 mod scaffold;
 
 use clap::{Parser, Subcommand};
@@ -66,6 +67,22 @@ enum Command {
         image: PathBuf,
     },
 
+    /// Build a rootfs ext4 image from a packages.toml with a [rootfs] section
+    ///
+    /// Requires a pre-resolved manifest.json alongside packages.toml.
+    /// Run `pkg resolve <packages.toml> --out <dir>/manifest.json` first.
+    ///
+    /// Substituters are tried in order: --substituter flags first, then
+    /// application.toml [[nix.substituters]], then cache.nixos.org.
+    ///
+    /// Examples:
+    ///   pkg rootfs build packages/opensearch/packages.toml
+    ///   pkg rootfs build packages/redis/packages.toml --out /tmp/redis-test.ext4
+    Rootfs {
+        #[command(subcommand)]
+        command: RootfsCommand,
+    },
+
     /// Scaffold a new workload package directory
     ///
     /// Creates packages/<name>/{packages.toml,build-rootfs.sh,vm.toml} in the
@@ -90,6 +107,21 @@ enum Command {
         /// Number of vCPUs
         #[arg(long, default_value_t = 1)]
         vcpus: u32,
+    },
+}
+
+#[derive(Subcommand)]
+enum RootfsCommand {
+    /// Build an ext4 rootfs image from the [rootfs] section of packages.toml
+    Build {
+        packages_toml: PathBuf,
+        /// Override the image output path from [rootfs].image_out
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long = "substituter", short = 's')]
+        substituters: Vec<String>,
+        #[arg(long = "substituter-token", short = 't')]
+        substituter_tokens: Vec<String>,
     },
 }
 
@@ -228,6 +260,20 @@ fn run() -> Result<(), HandlerError> {
             eprintln!("installed {} package(s) → {}", names.len(), dest_dir.display());
         }
 
+        Command::Rootfs { command: RootfsCommand::Build { packages_toml, out, substituters: sub_flags, substituter_tokens: token_flags } } => {
+            let cli_subs: Vec<justpkg_config::SubstituterConfig> = sub_flags
+                .iter()
+                .enumerate()
+                .map(|(i, u)| {
+                    let token = token_flags.get(i).filter(|t| !t.is_empty()).cloned();
+                    justpkg_config::SubstituterConfig { url: u.clone(), token }
+                })
+                .collect();
+            let image = rootfs::build_rootfs(&packages_toml, out, cli_subs, &config)?;
+            eprintln!("Run: vmic run --config {}", packages_toml.with_file_name("vm.toml").display());
+            let _ = image;
+        }
+
         Command::New { name, non_root, ports, memory, vcpus } => {
             let cfg = scaffold::ScaffoldConfig {
                 name,
@@ -315,10 +361,10 @@ fn load_flake_lock(path: &PathBuf) -> Result<FlakeLock, HandlerError> {
         .map_err(|e| HandlerError::InvalidRequest(format!("parse {path:?}: {e}")))
 }
 
-const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
+pub(crate) const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
 const SHEBANG: [u8; 2] = [b'#', b'!'];
 
-fn verify_package<R: std::io::Read + std::io::Seek>(
+pub(crate) fn verify_package<R: std::io::Read + std::io::Seek>(
     fs: &mut Filesystem<R>,
     name: &str,
     store_path: &str,
