@@ -84,8 +84,8 @@ const MINIMAL_FLAKE_LOCK: &str = r#"{
 struct FailingClient;
 
 impl justpkg_pkg::HttpClient for FailingClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 0,
         })
@@ -94,8 +94,8 @@ impl justpkg_pkg::HttpClient for FailingClient {
         &self,
         url: &str,
         _: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 0,
         })
@@ -190,11 +190,11 @@ impl ZstdMockClient {
 }
 
 impl justpkg_pkg::HttpClient for ZstdMockClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         if url.ends_with(".narinfo") {
             return Ok(self.narinfo_text.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -204,17 +204,17 @@ impl justpkg_pkg::HttpClient for ZstdMockClient {
         &self,
         url: &str,
         writer: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
         if url.ends_with(&self.nar_url_suffix) {
             writer
                 .write_all(&self.nar_bytes)
-                .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                .map_err(|_| justpkg_pkg::PkgError::Http {
                     url: url.to_string(),
                     status: 0,
                 })?;
             return Ok(self.nar_bytes.len() as u64);
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -299,11 +299,11 @@ impl Bzip2MockClient {
 }
 
 impl justpkg_pkg::HttpClient for Bzip2MockClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         if url.ends_with(".narinfo") {
             return Ok(self.narinfo_text.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -313,17 +313,17 @@ impl justpkg_pkg::HttpClient for Bzip2MockClient {
         &self,
         url: &str,
         writer: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
         if url.ends_with(&self.nar_url_suffix) {
             writer
                 .write_all(&self.nar_bytes)
-                .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                .map_err(|_| justpkg_pkg::PkgError::Http {
                     url: url.to_string(),
                     status: 0,
                 })?;
             return Ok(self.nar_bytes.len() as u64);
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -408,11 +408,11 @@ impl NoneCompressionStubClient {
 }
 
 impl justpkg_pkg::HttpClient for NoneCompressionStubClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         if url.ends_with(".narinfo") {
             return Ok(self.narinfo_text.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -422,16 +422,16 @@ impl justpkg_pkg::HttpClient for NoneCompressionStubClient {
         &self,
         url: &str,
         dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
         if url.ends_with("nar/stub.nar") {
             dest.write_all(&self.nar_bytes)
-                .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                .map_err(|_| justpkg_pkg::PkgError::Http {
                     url: url.to_string(),
                     status: 0,
                 })?;
             return Ok(self.nar_bytes.len() as u64);
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -636,11 +636,11 @@ fn test_build_extracts_to_nix_store_path_subdir() {
     }
 
     impl justpkg_pkg::HttpClient for StorePathStub {
-        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
             if url.ends_with(".narinfo") {
                 return Ok(self.narinfo_text.as_bytes().to_vec());
             }
-            Err(justpkg_pkg::JustpkgError::Http {
+            Err(justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 404,
             })
@@ -649,16 +649,16 @@ fn test_build_extracts_to_nix_store_path_subdir() {
             &self,
             url: &str,
             dest: &mut dyn std::io::Write,
-        ) -> Result<u64, justpkg_pkg::JustpkgError> {
+        ) -> Result<u64, justpkg_pkg::PkgError> {
             if url.ends_with("nar/abc123.nar") {
                 dest.write_all(&self.nar_bytes)
-                    .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                    .map_err(|_| justpkg_pkg::PkgError::Http {
                         url: url.to_string(),
                         status: 0,
                     })?;
                 return Ok(self.nar_bytes.len() as u64);
             }
-            Err(justpkg_pkg::JustpkgError::Http {
+            Err(justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 404,
             })
@@ -736,11 +736,11 @@ fn test_build_rejects_tampered_nar_bytes() {
     }
 
     impl justpkg_pkg::HttpClient for TamperedNarStub {
-        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
             if url.ends_with(".narinfo") {
                 return Ok(self.narinfo_text.as_bytes().to_vec());
             }
-            Err(justpkg_pkg::JustpkgError::Http {
+            Err(justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 404,
             })
@@ -749,17 +749,17 @@ fn test_build_rejects_tampered_nar_bytes() {
             &self,
             url: &str,
             dest: &mut dyn std::io::Write,
-        ) -> Result<u64, justpkg_pkg::JustpkgError> {
+        ) -> Result<u64, justpkg_pkg::PkgError> {
             if url.ends_with("nar/tampered.nar") {
                 dest.write_all(&self.corrupted_nar).map_err(|_| {
-                    justpkg_pkg::JustpkgError::Http {
+                    justpkg_pkg::PkgError::Http {
                         url: url.to_string(),
                         status: 0,
                     }
                 })?;
                 return Ok(self.corrupted_nar.len() as u64);
             }
-            Err(justpkg_pkg::JustpkgError::Http {
+            Err(justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 404,
             })
@@ -841,14 +841,14 @@ impl ClosureMockClient {
 }
 
 impl justpkg_pkg::HttpClient for ClosureMockClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         if url.ends_with(".narinfo") {
             if url.contains("dep0000000000000000000000000000") {
                 return Ok(self.dep_narinfo.as_bytes().to_vec());
             }
             return Ok(self.top_narinfo.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -858,19 +858,19 @@ impl justpkg_pkg::HttpClient for ClosureMockClient {
         &self,
         url: &str,
         dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
         let bytes = if url.ends_with("nar/dep.nar") {
             &self.dep_nar
         } else if url.ends_with("nar/top.nar") {
             &self.top_nar
         } else {
-            return Err(justpkg_pkg::JustpkgError::Http {
+            return Err(justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 404,
             });
         };
         dest.write_all(bytes)
-            .map_err(|_| justpkg_pkg::JustpkgError::Http {
+            .map_err(|_| justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 0,
             })?;
@@ -960,14 +960,14 @@ impl NoRefetchMockClient {
 }
 
 impl justpkg_pkg::HttpClient for NoRefetchMockClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         if url.ends_with(".narinfo") {
             if url.contains("dep0000000000000000000000000000") {
                 return Ok(self.dep_narinfo.as_bytes().to_vec());
             }
             return Ok(self.top_narinfo.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -977,10 +977,10 @@ impl justpkg_pkg::HttpClient for NoRefetchMockClient {
         &self,
         url: &str,
         dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
         if url.ends_with("nar/dep.nar") {
             dest.write_all(&self.dep_nar)
-                .map_err(|_| justpkg_pkg::JustpkgError::Http {
+                .map_err(|_| justpkg_pkg::PkgError::Http {
                     url: url.to_string(),
                     status: 0,
                 })?;
@@ -1087,7 +1087,7 @@ impl SharedDepMockClient {
 }
 
 impl justpkg_pkg::HttpClient for SharedDepMockClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         if url.ends_with(".narinfo") {
             if url.contains("dep0000000000000000000000000000") {
                 return Ok(self.dep_narinfo.as_bytes().to_vec());
@@ -1095,7 +1095,7 @@ impl justpkg_pkg::HttpClient for SharedDepMockClient {
             // Any other narinfo URL → serve the shared top-level narinfo.
             return Ok(self.top_narinfo.as_bytes().to_vec());
         }
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -1105,7 +1105,7 @@ impl justpkg_pkg::HttpClient for SharedDepMockClient {
         &self,
         url: &str,
         dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
         let bytes = if url.ends_with("nar/dep.nar") {
             self.dep_nar_fetch_count
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1113,13 +1113,13 @@ impl justpkg_pkg::HttpClient for SharedDepMockClient {
         } else if url.ends_with("nar/top.nar") {
             &self.top_nar
         } else {
-            return Err(justpkg_pkg::JustpkgError::Http {
+            return Err(justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 404,
             });
         };
         dest.write_all(bytes)
-            .map_err(|_| justpkg_pkg::JustpkgError::Http {
+            .map_err(|_| justpkg_pkg::PkgError::Http {
                 url: url.to_string(),
                 status: 0,
             })?;

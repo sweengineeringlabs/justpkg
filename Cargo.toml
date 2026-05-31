@@ -25,6 +25,9 @@ justpkg-nix     = { path = "main/features/nix",     package = "swe_justpkg_nix" 
 justpkg-resolve = { path = "main/features/resolve", package = "swe_justpkg_resolve" }
 justpkg-vminit  = { path = "main/features/vminit",  package = "swe_justpkg_vminit"  }
 
+# ── Edge framework
+edge-domain = { git = "ssh://git@github.com/sweengineeringlabs/edge.git", tag = "v0.6.0", package = "edge-domain" }
+
 # ── Cross-repo siblings ───────────────────────────────────────────────────
 # Content-addressed storage primitive. justpkg stores every fetched blob
 # (narinfo, compressed NAR) in the CAS keyed by its SHA-256 digest.

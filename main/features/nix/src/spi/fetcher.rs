@@ -141,7 +141,7 @@ impl<'a> NixFetcher<'a> {
             .get_bytes_auth(&narinfo_url, self.token)
             .map_err(|e| {
                 // Translate HTTP 404 to NotFound so callers can implement substituter fallback.
-                if let justpkg_pkg::JustpkgError::Http { status: 404, .. } = &e {
+                if let justpkg_pkg::PkgError::Http { status: 404, .. } = &e {
                     return NixFetchError::NotFound {
                         cache: self.cache_base.to_string(),
                         store_hash: store_hash.to_string(),
@@ -336,20 +336,20 @@ mod tests {
 #[cfg(test)]
 mod tests_build_store_path {
     use super::*;
-    use justpkg_pkg::JustpkgError;
+    use justpkg_pkg::PkgError;
     use std::collections::HashSet;
     use std::sync::{Arc, Mutex};
 
     struct PanicClient;
     impl HttpClient for PanicClient {
-        fn get_bytes(&self, _url: &str) -> Result<Vec<u8>, JustpkgError> {
+        fn get_bytes(&self, _url: &str) -> Result<Vec<u8>, PkgError> {
             panic!("PanicClient: no HTTP request should be made for invalid store paths");
         }
         fn get_stream(
             &self,
             _url: &str,
             _out: &mut dyn std::io::Write,
-        ) -> Result<u64, JustpkgError> {
+        ) -> Result<u64, PkgError> {
             panic!("PanicClient: no HTTP request should be made for invalid store paths");
         }
     }
@@ -427,7 +427,7 @@ mod tests_build_store_path {
     }
 
     impl HttpClient for ClosureClient {
-        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, JustpkgError> {
+        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, PkgError> {
             // narinfo requests: /<hash>.narinfo
             let hash = url
                 .split('/')
@@ -475,7 +475,7 @@ mod tests_build_store_path {
             Ok(narinfo.into_bytes())
         }
 
-        fn get_stream(&self, url: &str, out: &mut dyn std::io::Write) -> Result<u64, JustpkgError> {
+        fn get_stream(&self, url: &str, out: &mut dyn std::io::Write) -> Result<u64, PkgError> {
             // NAR download requests: /nar/<hash>.nar
             let hash = url
                 .split('/')
@@ -486,7 +486,7 @@ mod tests_build_store_path {
             self.fetched.lock().unwrap().insert(format!("nar:{hash}"));
             let nar = minimal_nar();
             let n = nar.len() as u64;
-            out.write_all(&nar).map_err(JustpkgError::Io)?;
+            out.write_all(&nar).map_err(PkgError::Io)?;
             Ok(n)
         }
     }

@@ -14,6 +14,7 @@ name = "swe_justpkg_vminit"
 path = "src/lib.rs"
 
 [dependencies]
+edge-domain    = { workspace = true }
 justpkg-config = { workspace = true }
 justpkg-pkg    = { workspace = true }
 justpkg-nix    = { workspace = true }

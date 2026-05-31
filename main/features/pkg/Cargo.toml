@@ -10,7 +10,8 @@ rust-version.workspace = true
 description = "justpkg core — HTTP client trait, path sanitizer, shared error types"
 
 [dependencies]
-cas       = { workspace = true }
+edge-domain = { workspace = true }
+cas         = { workspace = true }
 thiserror = { workspace = true }
 serde     = { workspace = true }
 ureq      = { workspace = true }

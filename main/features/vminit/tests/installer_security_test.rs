@@ -11,8 +11,8 @@ use swe_justpkg_vminit::{install_packages, parse_manifest, VminitInstallError};
 struct ErrorHttpClient;
 
 impl justpkg_pkg::HttpClient for ErrorHttpClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 500,
         })
@@ -21,8 +21,8 @@ impl justpkg_pkg::HttpClient for ErrorHttpClient {
         &self,
         url: &str,
         _dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 500,
         })

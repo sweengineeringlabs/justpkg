@@ -1,3 +1,4 @@
+use edge_domain::ServiceError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -22,4 +23,32 @@ pub enum ResolveError {
 
     #[error("manifest write error for '{path}': {message}")]
     ManifestWrite { path: String, message: String },
+}
+
+impl From<ResolveError> for ServiceError {
+    fn from(e: ResolveError) -> Self {
+        match e {
+            ResolveError::SpecRead { path, message } => {
+                ServiceError::InvalidRequest(format!("packages.toml read error for {path}: {message}"))
+            }
+            ResolveError::SpecParse { path, message } => {
+                ServiceError::InvalidRequest(format!("packages.toml parse error for {path}: {message}"))
+            }
+            ResolveError::ChannelFetch { channel, message } => {
+                ServiceError::Unavailable(format!("channel fetch failed for '{channel}': {message}"))
+            }
+            ResolveError::StorePathsDecompress { url, message } => {
+                ServiceError::Internal(format!("store-paths.xz decompression error for '{url}': {message}"))
+            }
+            ResolveError::PackageNotFound { name, channel } => {
+                ServiceError::NotFound(format!("package '{name}' not found in '{channel}' store-paths"))
+            }
+            ResolveError::CacheWrite { path, message } => {
+                ServiceError::Internal(format!("disk cache write error for '{path}': {message}"))
+            }
+            ResolveError::ManifestWrite { path, message } => {
+                ServiceError::Internal(format!("manifest write error for '{path}': {message}"))
+            }
+        }
+    }
 }

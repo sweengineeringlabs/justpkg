@@ -1,3 +1,4 @@
+use edge_domain::ServiceError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,4 +32,28 @@ pub enum VminitInstallError {
         reason: String,
         source: std::io::Error,
     },
+}
+
+impl From<VminitInstallError> for ServiceError {
+    fn from(e: VminitInstallError) -> Self {
+        match e {
+            VminitInstallError::ManifestParse(msg) => {
+                ServiceError::InvalidRequest(format!("manifest parse error: {msg}"))
+            }
+            VminitInstallError::PackageNotFound { name } => {
+                ServiceError::NotFound(format!("package not found in manifest: {name:?}"))
+            }
+            VminitInstallError::FetchFailed { name, source } => {
+                ServiceError::Unavailable(format!("fetch failed for {name:?}: {source}"))
+            }
+            VminitInstallError::NotInAnyCache { name, store_path, caches } => {
+                ServiceError::NotFound(format!(
+                    "'{name}' ({store_path}) not found in any cache: {caches:?}"
+                ))
+            }
+            VminitInstallError::RootLayoutFailed { reason, source } => {
+                ServiceError::Internal(format!("root layout generation failed: {reason}: {source}"))
+            }
+        }
+    }
 }

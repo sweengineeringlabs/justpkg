@@ -10,6 +10,7 @@ rust-version.workspace = true
 description = "justpkg Nix backend — flake.lock parser, narinfo fetcher, NAR extractor"
 
 [dependencies]
+edge-domain = { workspace = true }
 justpkg-pkg = { workspace = true }
 cas          = { workspace = true }
 thiserror = { workspace = true }

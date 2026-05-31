@@ -1,4 +1,5 @@
-use justpkg_pkg::JustpkgError;
+use edge_domain::ServiceError;
+use justpkg_pkg::PkgError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -22,11 +23,29 @@ pub enum NixFetchError {
     NotFound { cache: String, store_hash: String },
 
     #[error(transparent)]
-    Core(#[from] JustpkgError),
+    Core(#[from] PkgError),
 }
 
-/// Returns `true` if `e` indicates the store path was absent from the cache
-/// (i.e. the cache returned HTTP 404).  Use this to drive substituter fallback.
+/// Returns `true` if `e` indicates the store path was absent from the cache.
 pub fn is_not_found(e: &NixFetchError) -> bool {
     matches!(e, NixFetchError::NotFound { .. })
+}
+
+impl From<NixFetchError> for ServiceError {
+    fn from(e: NixFetchError) -> Self {
+        match e {
+            NixFetchError::FlakeLockParse(msg) => ServiceError::Internal(msg),
+            NixFetchError::NarInfoParse { hash, message } => {
+                ServiceError::Internal(format!("narinfo parse error for {hash}: {message}"))
+            }
+            NixFetchError::InvalidNixHash(s) => {
+                ServiceError::InvalidRequest(format!("invalid Nix hash encoding '{s}'"))
+            }
+            NixFetchError::NarExtract(msg) => ServiceError::Internal(msg),
+            NixFetchError::NotFound { cache, store_hash } => {
+                ServiceError::NotFound(format!("store path {store_hash} not found in {cache}"))
+            }
+            NixFetchError::Core(e) => ServiceError::from(e),
+        }
+    }
 }

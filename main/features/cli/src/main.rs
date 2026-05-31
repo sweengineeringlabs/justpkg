@@ -1,5 +1,5 @@
-use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use edge_domain::{HandlerError, ServiceError};
 use std::path::PathBuf;
 
 use cas::FsCas;
@@ -10,7 +10,7 @@ use justpkg_pkg::UreqClient;
 use justpkg_vminit::{parse_manifest, VminitInstaller};
 
 #[derive(Parser)]
-#[command(name = "justpkg", about = "Nix NAR fetcher and extractor")]
+#[command(name = "pkg", about = "Nix NAR fetcher and extractor")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -20,21 +20,16 @@ struct Cli {
 enum Command {
     /// Fetch and extract all NARs from a flake.lock into a destination directory
     Build {
-        /// Path to flake.lock
         flake_lock: PathBuf,
-        /// Destination directory for extracted packages
         dest_dir: PathBuf,
     },
     /// Fetch all NARs from a flake.lock to the local CAS cache
     Fetch {
-        /// Path to flake.lock
         flake_lock: PathBuf,
     },
     /// Extract all NARs from a previously fetched flake.lock
     Extract {
-        /// Path to flake.lock
         flake_lock: PathBuf,
-        /// Destination directory for extracted packages
         dest_dir: PathBuf,
     },
 
@@ -43,149 +38,107 @@ enum Command {
     /// Downloads the NixOS channel closure index (store-paths.xz) and
     /// writes manifest.json with name → absolute Nix store path entries.
     Resolve {
-        /// Path to packages.toml
         packages_toml: PathBuf,
-        /// Path to write manifest.json
         #[arg(long)]
         out: PathBuf,
     },
 
     /// Fetch and extract Nix packages from a manifest.json into a directory tree
     ///
-    /// Reads manifest.json produced by `justpkg resolve`, downloads each
-    /// package's NAR closure from the binary cache, and extracts into
-    /// <dest-dir>/nix/store/<hash>-<name>.  If no --package flags are given,
-    /// all packages in the manifest are installed.
-    ///
-    /// Substituters are tried in order: --substituter flags first, then any
-    /// substituters from application.toml, then cache.nixos.org as final
-    /// fallback.  A 404 from one cache silently advances to the next.
+    /// Substituters are tried in order: --substituter flags first, then
+    /// application.toml, then cache.nixos.org. A 404 silently advances to the next.
     Install {
-        /// Path to manifest.json
         manifest: PathBuf,
-        /// Destination directory (packages land under <dest-dir>/nix/store/…)
         dest_dir: PathBuf,
-        /// Package names to install (repeatable; default: all in manifest)
         #[arg(long = "package", short = 'p')]
         packages: Vec<String>,
-        /// Binary cache URL to prepend to the substituter list (repeatable).
-        /// Tried before application.toml substituters.
-        /// Example: --substituter https://cache.swe.internal/swe-private
         #[arg(long = "substituter", short = 's')]
         substituters: Vec<String>,
-        /// Bearer token for the substituter at the same position in the
-        /// --substituter list (repeatable, positional pairing).
-        /// The first --substituter-token pairs with the first --substituter.
-        /// Omit for unauthenticated caches (e.g. cache.nixos.org).
         #[arg(long = "substituter-token", short = 't')]
         substituter_tokens: Vec<String>,
     },
 
     /// Verify that every package in a manifest has valid ELF binaries in the ext4 image
-    ///
-    /// For each store path in manifest.json, looks for a `bin/` directory in the
-    /// ext4 image and checks that every file there starts with the ELF magic bytes.
-    /// Exits non-zero if any package is missing or any binary fails the ELF check.
     VerifyImage {
-        /// Path to manifest.json (produced by `justpkg resolve`)
         manifest: PathBuf,
-        /// Path to ext4 image file
         image: PathBuf,
     },
 }
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), HandlerError> {
     let cli = Cli::parse();
     let config = load_config();
     let cache_base = config.nix.cache_base.clone();
     let channel_base = config.nix.channel_base.clone();
 
     match cli.command {
-        Command::Build {
-            flake_lock,
-            dest_dir,
-        } => {
+        Command::Build { flake_lock, dest_dir } => {
             let lock = load_flake_lock(&flake_lock)?;
             std::fs::create_dir_all(&dest_dir)
-                .with_context(|| format!("create dest dir {:?}", dest_dir))?;
+                .map_err(|e| HandlerError::ExecutionFailed(format!("create {dest_dir:?}: {e}")))?;
             let http = UreqClient;
-            let fetcher = NixFetcher {
-                http: &http,
-                cache_base: &cache_base,
-                token: None,
-            };
-            fetcher
-                .build(&lock, &dest_dir)
-                .with_context(|| "NAR fetch/extract failed")?;
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
+            fetcher.build(&lock, &dest_dir)
+                .map_err(|e| HandlerError::ExecutionFailed(format!("NAR fetch/extract: {e}")))?;
             eprintln!("done: {}", dest_dir.display());
         }
+
         Command::Fetch { flake_lock } => {
             let lock = load_flake_lock(&flake_lock)?;
-            let cache_dir = dirs_next::cache_dir()
-                .unwrap_or_else(|| PathBuf::from(".cache"))
-                .join("justpkg");
+            let cache_dir = cache_dir();
             std::fs::create_dir_all(&cache_dir)
-                .with_context(|| format!("create cache dir {:?}", cache_dir))?;
-            let cas =
-                FsCas::new(&cache_dir).with_context(|| format!("open CAS at {:?}", cache_dir))?;
+                .map_err(|e| HandlerError::ExecutionFailed(format!("create cache dir: {e}")))?;
+            let cas = FsCas::new(&cache_dir)
+                .map_err(|e| HandlerError::ExecutionFailed(format!("open CAS: {e}")))?;
             let http = UreqClient;
-            let fetcher = NixFetcher {
-                http: &http,
-                cache_base: &cache_base,
-                token: None,
-            };
-            let map = fetcher
-                .fetch_to_cas(&lock, &cas)
-                .with_context(|| "NAR fetch to CAS failed")?;
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
+            let map = fetcher.fetch_to_cas(&lock, &cas)
+                .map_err(|e| HandlerError::ExecutionFailed(format!("NAR fetch to CAS: {e}")))?;
             for (name, digest) in &map {
                 eprintln!("cached {name}: {digest}");
             }
         }
-        Command::Extract {
-            flake_lock,
-            dest_dir,
-        } => {
+
+        Command::Extract { flake_lock, dest_dir } => {
             let lock = load_flake_lock(&flake_lock)?;
-            let cache_dir = dirs_next::cache_dir()
-                .unwrap_or_else(|| PathBuf::from(".cache"))
-                .join("justpkg");
+            let cache_dir = cache_dir();
             std::fs::create_dir_all(&cache_dir)
-                .with_context(|| format!("create cache dir {:?}", cache_dir))?;
-            let cas =
-                FsCas::new(&cache_dir).with_context(|| format!("open CAS at {:?}", cache_dir))?;
+                .map_err(|e| HandlerError::ExecutionFailed(format!("create cache dir: {e}")))?;
+            let cas = FsCas::new(&cache_dir)
+                .map_err(|e| HandlerError::ExecutionFailed(format!("open CAS: {e}")))?;
             std::fs::create_dir_all(&dest_dir)
-                .with_context(|| format!("create dest dir {:?}", dest_dir))?;
+                .map_err(|e| HandlerError::ExecutionFailed(format!("create {dest_dir:?}: {e}")))?;
             let http = UreqClient;
-            let fetcher = NixFetcher {
-                http: &http,
-                cache_base: &cache_base,
-                token: None,
-            };
-            fetcher
-                .extract_from_cas(&lock, &cas, &dest_dir)
-                .with_context(|| "NAR extract from CAS failed")?;
+            let fetcher = NixFetcher { http: &http, cache_base: &cache_base, token: None };
+            fetcher.extract_from_cas(&lock, &cas, &dest_dir)
+                .map_err(|e| HandlerError::ExecutionFailed(format!("NAR extract: {e}")))?;
             eprintln!("done: {}", dest_dir.display());
         }
 
         Command::Resolve { packages_toml, out } => {
             let spec = justpkg_resolve::load_packages_spec(&packages_toml)
-                .with_context(|| format!("load {:?}", packages_toml))?;
-            let resolve_cache = dirs_next::cache_dir()
-                .unwrap_or_else(|| PathBuf::from(".cache"))
-                .join("justpkg")
-                .join("resolve");
+                .map_err(svc_to_handler)?;
+            let resolve_cache = cache_dir().join("resolve");
             std::fs::create_dir_all(&resolve_cache)
-                .with_context(|| format!("create resolve cache dir {:?}", resolve_cache))?;
+                .map_err(|e| HandlerError::ExecutionFailed(format!("create resolve cache: {e}")))?;
             if let Some(parent) = out.parent() {
                 if !parent.as_os_str().is_empty() {
-                    std::fs::create_dir_all(parent)
-                        .with_context(|| format!("create output dir {:?}", parent))?;
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        HandlerError::ExecutionFailed(format!("create output dir: {e}"))
+                    })?;
                 }
             }
             let http = UreqClient;
             let manifest =
                 justpkg_resolve::resolve(&http, &spec, &channel_base, &resolve_cache, &out)
-                    .with_context(|| format!("resolve {:?}", packages_toml))?;
+                    .map_err(svc_to_handler)?;
             eprintln!(
                 "resolved {} package(s) → {} (nixpkgs {})",
                 manifest.packages.len(),
@@ -202,11 +155,10 @@ fn main() -> Result<()> {
             substituter_tokens: token_flags,
         } => {
             let text = std::fs::read_to_string(&manifest)
-                .with_context(|| format!("read {:?}", manifest))?;
-            let pkg_manifest =
-                parse_manifest(&text).with_context(|| format!("parse {:?}", manifest))?;
+                .map_err(|e| HandlerError::InvalidRequest(format!("read {manifest:?}: {e}")))?;
+            let pkg_manifest = parse_manifest(&text).map_err(svc_to_handler)?;
             std::fs::create_dir_all(&dest_dir)
-                .with_context(|| format!("create dest dir {:?}", dest_dir))?;
+                .map_err(|e| HandlerError::ExecutionFailed(format!("create {dest_dir:?}: {e}")))?;
 
             let all_names: Vec<String>;
             let names: Vec<&str> = if packages.is_empty() {
@@ -216,42 +168,32 @@ fn main() -> Result<()> {
                 packages.iter().map(|s| s.as_str()).collect()
             };
 
-            // CLI --substituter flags prepend the config substituter list.
-            // --substituter-token[i] supplies the Bearer token for --substituter[i].
-            // Substituters without a matching token are unauthenticated.
             let mut effective_subs: Vec<justpkg_config::SubstituterConfig> = sub_flags
                 .iter()
                 .enumerate()
                 .map(|(i, u)| {
                     let token = token_flags.get(i).filter(|t| !t.is_empty()).cloned();
-                    justpkg_config::SubstituterConfig {
-                        url: u.clone(),
-                        token,
-                    }
+                    justpkg_config::SubstituterConfig { url: u.clone(), token }
                 })
                 .collect();
             effective_subs.extend(config.nix.effective_substituters());
 
             let http = UreqClient;
-            let installer = VminitInstaller::with_substituters(&http, pkg_manifest, effective_subs);
-            installer
-                .install(&names, &dest_dir)
-                .with_context(|| format!("install packages into {:?}", dest_dir))?;
-            eprintln!(
-                "installed {} package(s) → {}",
-                names.len(),
-                dest_dir.display()
-            );
+            let installer =
+                VminitInstaller::with_substituters(&http, pkg_manifest, effective_subs);
+            installer.install(&names, &dest_dir).map_err(svc_to_handler)?;
+            eprintln!("installed {} package(s) → {}", names.len(), dest_dir.display());
         }
 
         Command::VerifyImage { manifest, image } => {
             let text = std::fs::read_to_string(&manifest)
-                .with_context(|| format!("read {:?}", manifest))?;
-            let pkg_manifest =
-                parse_manifest(&text).with_context(|| format!("parse {:?}", manifest))?;
-            let f =
-                std::fs::File::open(&image).with_context(|| format!("open image {:?}", image))?;
-            let mut fs = Filesystem::open(f).with_context(|| format!("open ext4 {:?}", image))?;
+                .map_err(|e| HandlerError::InvalidRequest(format!("read {manifest:?}: {e}")))?;
+            let pkg_manifest = parse_manifest(&text).map_err(svc_to_handler)?;
+            let f = std::fs::File::open(&image)
+                .map_err(|e| HandlerError::InvalidRequest(format!("open image {image:?}: {e}")))?;
+            let mut fs = Filesystem::open(f).map_err(|e| {
+                HandlerError::ExecutionFailed(format!("open ext4 {image:?}: {e}"))
+            })?;
 
             let mut all_ok = true;
             for (name, store_path) in &pkg_manifest.entries {
@@ -264,7 +206,9 @@ fn main() -> Result<()> {
                 }
             }
             if !all_ok {
-                bail!("one or more packages failed ELF verification");
+                return Err(HandlerError::ExecutionFailed(
+                    "one or more packages failed ELF verification".into(),
+                ));
             }
             eprintln!("all {} package(s) verified", pkg_manifest.entries.len());
         }
@@ -273,39 +217,48 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn load_flake_lock(path: &PathBuf) -> Result<FlakeLock> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("read {:?}", path))?;
-    FlakeLock::from_json(&text).with_context(|| format!("parse {:?}", path))
+/// Convert any type that bridges to [`ServiceError`] into a [`HandlerError`].
+fn svc_to_handler<E: Into<ServiceError>>(e: E) -> HandlerError {
+    HandlerError::from(e.into())
+}
+
+fn cache_dir() -> PathBuf {
+    dirs_next::cache_dir()
+        .unwrap_or_else(|| PathBuf::from(".cache"))
+        .join("justpkg")
+}
+
+fn load_flake_lock(path: &PathBuf) -> Result<FlakeLock, HandlerError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| HandlerError::InvalidRequest(format!("read {path:?}: {e}")))?;
+    FlakeLock::from_json(&text)
+        .map_err(|e| HandlerError::InvalidRequest(format!("parse {path:?}: {e}")))
 }
 
 const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
 const SHEBANG: [u8; 2] = [b'#', b'!'];
 
-/// Open `<store_path>/bin/` inside the ext4 image and verify every
-/// regular file starts with ELF magic. Returns the count of binaries
-/// checked, or an error describing the first failure.
 fn verify_package<R: std::io::Read + std::io::Seek>(
     fs: &mut Filesystem<R>,
     name: &str,
     store_path: &str,
-) -> Result<usize> {
-    // Verify the store directory itself exists.
-    fs.open_path(store_path)
-        .with_context(|| format!("store path {store_path} not found in image"))?;
+) -> Result<usize, HandlerError> {
+    fs.open_path(store_path).map_err(|e| {
+        HandlerError::NotFound(format!("store path {store_path} not found in image: {e}"))
+    })?;
 
-    // bin/ is optional (some packages are pure libraries).
     let bin_path = format!("{store_path}/bin");
     let bin_inode_num = match fs.open_path(&bin_path) {
         Ok(n) => n,
         Err(Ext4Error::NotFound { .. }) => return Ok(0),
-        Err(e) => return Err(e).with_context(|| format!("open {bin_path}")),
+        Err(e) => return Err(HandlerError::ExecutionFailed(format!("open {bin_path}: {e}"))),
     };
     let bin_inode = fs
         .read_inode(bin_inode_num)
-        .with_context(|| format!("read inode for {bin_path}"))?;
+        .map_err(|e| HandlerError::ExecutionFailed(format!("read inode {bin_path}: {e}")))?;
     let entries = fs
         .read_dir(&bin_inode)
-        .with_context(|| format!("read dir {bin_path}"))?;
+        .map_err(|e| HandlerError::ExecutionFailed(format!("read dir {bin_path}: {e}")))?;
 
     let mut count = 0usize;
     for entry in &entries {
@@ -319,23 +272,23 @@ fn verify_package<R: std::io::Read + std::io::Seek>(
         let file_path = format!("{bin_path}/{entry_name}");
         let file_inode_num = fs
             .open_path(&file_path)
-            .with_context(|| format!("open {file_path}"))?;
+            .map_err(|e| HandlerError::ExecutionFailed(format!("open {file_path}: {e}")))?;
         let file_inode = fs
             .read_inode(file_inode_num)
-            .with_context(|| format!("read inode {file_path}"))?;
+            .map_err(|e| HandlerError::ExecutionFailed(format!("read inode {file_path}: {e}")))?;
         if !file_inode.is_regular() {
             continue;
         }
         let data = fs
             .read_file(&file_inode)
-            .with_context(|| format!("read file {file_path}"))?;
+            .map_err(|e| HandlerError::ExecutionFailed(format!("read file {file_path}: {e}")))?;
         let is_elf = data.len() >= 4 && data[..4] == ELF_MAGIC;
         let is_script = data.len() >= 2 && data[..2] == SHEBANG;
         if !is_elf && !is_script {
-            bail!(
+            return Err(HandlerError::ExecutionFailed(format!(
                 "{name}: {file_path} is not an ELF binary or shell script (first bytes: {:?})",
                 &data[..data.len().min(4)]
-            );
+            )));
         }
         count += 1;
     }

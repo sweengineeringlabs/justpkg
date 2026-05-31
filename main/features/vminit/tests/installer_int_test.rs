@@ -20,8 +20,8 @@ use swe_justpkg_vminit::{install_packages, parse_manifest, VminitInstallError};
 struct FailingHttpClient;
 
 impl justpkg_pkg::HttpClient for FailingHttpClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 503,
         })
@@ -30,8 +30,8 @@ impl justpkg_pkg::HttpClient for FailingHttpClient {
         &self,
         url: &str,
         _dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 503,
         })
@@ -46,9 +46,9 @@ struct CountingHttpClient {
 }
 
 impl justpkg_pkg::HttpClient for CountingHttpClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 503,
         })
@@ -57,8 +57,8 @@ impl justpkg_pkg::HttpClient for CountingHttpClient {
         &self,
         url: &str,
         _dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 503,
         })
@@ -179,9 +179,9 @@ struct RecordingNotFoundClient {
 }
 
 impl justpkg_pkg::HttpClient for RecordingNotFoundClient {
-    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::JustpkgError> {
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, justpkg_pkg::PkgError> {
         self.tried_urls.lock().unwrap().push(url.to_string());
-        Err(justpkg_pkg::JustpkgError::Http {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
@@ -190,8 +190,8 @@ impl justpkg_pkg::HttpClient for RecordingNotFoundClient {
         &self,
         url: &str,
         _dest: &mut dyn std::io::Write,
-    ) -> Result<u64, justpkg_pkg::JustpkgError> {
-        Err(justpkg_pkg::JustpkgError::Http {
+    ) -> Result<u64, justpkg_pkg::PkgError> {
+        Err(justpkg_pkg::PkgError::Http {
             url: url.to_string(),
             status: 404,
         })
