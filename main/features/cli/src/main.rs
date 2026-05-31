@@ -284,13 +284,13 @@ fn run() -> Result<(), HandlerError> {
             };
             scaffold::scaffold(&cfg, std::path::Path::new("."))?;
             eprintln!(
-                "created packages/{name}/{{packages.toml,build-rootfs.sh,vm.toml}}",
+                "created packages/{name}/{{packages.toml,vm.toml}}",
                 name = cfg.name
             );
             eprintln!();
             eprintln!("Next steps:");
             eprintln!(
-                "  1. Edit packages/{name}/packages.toml — add your workload packages",
+                "  1. Edit packages/{name}/packages.toml — add workload packages and fill in [rootfs] entrypoint",
                 name = cfg.name
             );
             eprintln!(
@@ -298,15 +298,11 @@ fn run() -> Result<(), HandlerError> {
                 name = cfg.name
             );
             eprintln!(
-                "  3. Edit packages/{name}/build-rootfs.sh — implement the entrypoint wrapper",
+                "  3. pkg rootfs build packages/{name}/packages.toml",
                 name = cfg.name
             );
             eprintln!(
-                "  4. bash packages/{name}/build-rootfs.sh",
-                name = cfg.name
-            );
-            eprintln!(
-                "  5. vmic run --config packages/{name}/vm.toml",
+                "  4. vmic run --config packages/{name}/vm.toml",
                 name = cfg.name
             );
         }
