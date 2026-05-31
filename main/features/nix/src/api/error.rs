@@ -40,11 +40,11 @@ pub fn is_not_found(e: &NixFetchError) -> bool {
 ///   because the next substituter may be reachable even when a private Attic instance
 ///   is down.
 pub fn is_cache_miss(e: &NixFetchError) -> bool {
-    match e {
-        NixFetchError::NotFound { .. } => true,
-        NixFetchError::Core(justpkg_pkg::PkgError::Http { status: 0, .. }) => true,
-        _ => false,
-    }
+    matches!(
+        e,
+        NixFetchError::NotFound { .. }
+            | NixFetchError::Core(justpkg_pkg::PkgError::Http { status: 0, .. })
+    )
 }
 
 impl From<NixFetchError> for ServiceError {

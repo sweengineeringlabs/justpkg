@@ -146,9 +146,11 @@ fn test_install_packages_valid_entry_reaches_http_and_propagates_fetch_error() {
 }
 
 #[test]
-fn test_install_packages_stops_on_first_error() {
-    // Given two valid packages, the installer must stop at the first HTTP failure
-    // and not attempt the second package.  We count HTTP calls: must be exactly 1.
+fn test_install_packages_parallel_all_attempted_on_error() {
+    // With parallel install, all package threads start concurrently — there is no
+    // stop-on-first-error.  Both packages are attempted; the first thread error is
+    // returned after all threads complete.  Verify: error propagates AND both
+    // packages made at least one HTTP call (narinfo fetch).
     let call_count = Arc::new(AtomicU32::new(0));
     let http = CountingHttpClient {
         call_count: Arc::clone(&call_count),
@@ -158,16 +160,10 @@ fn test_install_packages_stops_on_first_error() {
 
     let result = install_packages(&http, &manifest, &["curl", "git"], dir.path(), &[]);
 
+    assert!(result.is_err(), "HTTP failure must propagate as error");
     assert!(
-        result.is_err(),
-        "first HTTP failure must abort the whole call"
-    );
-    // NixFetcher calls get_bytes once per package (for the narinfo).
-    // Because we stop on first error, exactly 1 HTTP call must happen.
-    assert_eq!(
-        call_count.load(Ordering::SeqCst),
-        1,
-        "installer must stop after first fetch failure, not continue to second package"
+        call_count.load(Ordering::SeqCst) >= 2,
+        "parallel installer must attempt all packages; expected ≥2 HTTP calls"
     );
 }
 
