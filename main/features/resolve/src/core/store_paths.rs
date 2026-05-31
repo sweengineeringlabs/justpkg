@@ -78,7 +78,7 @@ pub(crate) fn find_store_path<'a>(paths: &'a [String], name: &str) -> Option<&'a
 
     let extension_suffixes = [
         "-lib", "-dev", "-man", "-doc", "-bin", "-data", "-debug", "-include", "-static",
-        "-headers",
+        "-headers", "-info",
     ];
     let exclude_keywords = ["test-run-", "nixos-test", "test-driver", "-driver-"];
 
@@ -167,6 +167,21 @@ mod tests {
         ]);
         let result = find_store_path(&ps, "postgresql_16").unwrap();
         assert!(!result.ends_with("-lib"), "must prefer primary output over -lib: {result}");
+    }
+
+    #[test]
+    fn test_find_store_path_prefers_primary_over_info() {
+        // Regression: bash resolves to bash-5.2p37-info (docs) instead of bash-5.2p37
+        // because -info was not in the extension_suffixes deprioritisation list.
+        let ps = paths(&[
+            "/nix/store/aaaabbbbccccddddeeeeffffgggg0000-bash-5.2p37",
+            "/nix/store/bbbbccccddddeeeeffffgggg00001111-bash-5.2p37-info",
+        ]);
+        let result = find_store_path(&ps, "bash").unwrap();
+        assert!(
+            !result.ends_with("-info"),
+            "must prefer primary bash over bash-info (docs package): {result}"
+        );
     }
 
     #[test]
