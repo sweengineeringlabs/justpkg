@@ -11,8 +11,8 @@ use justpkg_pkg::HttpClient;
 use crate::api::error::NixFetchError;
 use crate::api::flake_lock::FlakeLock;
 use crate::api::narinfo::{Compression, NarInfo};
-use crate::spi::nar::extract_nar;
-use crate::spi::nix_hash;
+use crate::core::nar::extract_nar;
+use crate::core::nix_hash;
 
 pub struct NixFetcher<'a> {
     pub http: &'a dyn HttpClient,
@@ -456,7 +456,7 @@ mod tests_build_store_path {
                 use sha2::Digest as _;
                 sha2::Sha256::digest(&nar_bytes).to_vec()
             };
-            use crate::spi::nix_hash::nix_base32_encode;
+            use crate::core::nix_hash::nix_base32_encode;
             let nar_hash = nix_base32_encode(&nar_hash_bytes);
             let file_hash = hex::encode(&nar_hash_bytes);
 

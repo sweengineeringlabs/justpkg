@@ -1,2 +1,2 @@
-pub(crate) mod manifest;
-pub(crate) mod store_paths;
+//! Extension hooks for downstream implementors.
+//! Reserved for future substituter and resolver SPI extensions.

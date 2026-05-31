@@ -3,11 +3,7 @@ use crate::api::types::ResolvedManifest;
 use std::path::Path;
 
 /// Serialise `manifest` to `path` as pretty-printed JSON.
-///
-/// The `"packages"` key maps package names to Nix store paths, e.g.:
-/// `{"packages": {"postgresql_16": "/nix/store/<hash>-postgresql-16.9"}, "meta": {...}}`.
-/// The `"meta"` key is ignored by the existing vminit parser.
-pub fn write_manifest(manifest: &ResolvedManifest, path: &Path) -> Result<(), ResolveError> {
+pub(crate) fn write_manifest(manifest: &ResolvedManifest, path: &Path) -> Result<(), ResolveError> {
     let json = serde_json::to_string_pretty(manifest).map_err(|e| ResolveError::ManifestWrite {
         path: path.display().to_string(),
         message: e.to_string(),
@@ -20,8 +16,7 @@ pub fn write_manifest(manifest: &ResolvedManifest, path: &Path) -> Result<(), Re
 }
 
 /// Format `SystemTime::now()` as a minimal RFC 3339 UTC timestamp.
-/// No external dependency — used only for the `meta.resolved_at` field.
-pub fn now_rfc3339() -> String {
+pub(crate) fn now_rfc3339() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -122,10 +117,7 @@ mod tests {
         let packages = root["packages"].as_object().unwrap();
         assert!(packages.contains_key("postgresql_16"));
         let val = packages["postgresql_16"].as_str().unwrap();
-        assert!(
-            val.starts_with("/nix/store/"),
-            "vminit expects a /nix/store/ path: {val}"
-        );
+        assert!(val.starts_with("/nix/store/"), "vminit expects a /nix/store/ path: {val}");
     }
 
     #[test]

@@ -1,3 +1,2 @@
-pub(crate) mod fetcher;
-pub(crate) mod nar;
-pub(crate) mod nix_hash;
+//! Extension hooks for downstream implementors.
+//! Reserved for future substituter and cache backend SPI extensions.
