@@ -46,7 +46,10 @@ impl HttpClient for UreqClient {
         let url = url.to_string();
         retry_with_backoff(
             || {
-                let resp = ureq::get(&url).call().map_err(|e| map_ureq_error(&url, e))?;
+                let resp = ureq::get(&url)
+                    .set("Connection", "close")
+                    .call()
+                    .map_err(|e| map_ureq_error(&url, e))?;
                 let mut buf = Vec::new();
                 resp.into_reader().read_to_end(&mut buf).map_err(PkgError::Io)?;
                 Ok(buf)
@@ -59,7 +62,10 @@ impl HttpClient for UreqClient {
         let url = url.to_string();
         retry_with_backoff(
             || {
-                let resp = ureq::get(&url).call().map_err(|e| map_ureq_error(&url, e))?;
+                let resp = ureq::get(&url)
+                    .set("Connection", "close")
+                    .call()
+                    .map_err(|e| map_ureq_error(&url, e))?;
                 let n = std::io::copy(&mut resp.into_reader(), dest).map_err(PkgError::Io)?;
                 Ok(n)
             },
@@ -72,7 +78,7 @@ impl HttpClient for UreqClient {
         let token = token.map(|t| t.to_string());
         retry_with_backoff(
             || {
-                let mut req = ureq::get(&url);
+                let mut req = ureq::get(&url).set("Connection", "close");
                 if let Some(ref t) = token {
                     req = req.set("Authorization", &format!("Bearer {t}"));
                 }
@@ -95,7 +101,7 @@ impl HttpClient for UreqClient {
         let token = token.map(|t| t.to_string());
         retry_with_backoff(
             || {
-                let mut req = ureq::get(&url);
+                let mut req = ureq::get(&url).set("Connection", "close");
                 if let Some(ref t) = token {
                     req = req.set("Authorization", &format!("Bearer {t}"));
                 }
