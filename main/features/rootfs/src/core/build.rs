@@ -75,13 +75,11 @@ pub fn build_rootfs(
     }
 
     // ── 4. Resolve image output path ─────────────────────────────────────────
-    let image_path = out_override.unwrap_or_else(|| {
-        let base = packages_toml
-            .parent()
-            .and_then(|p| p.parent())
-            .unwrap_or_else(|| Path::new("."));
-        base.join(&rootfs.image_out)
-    });
+    // image_out is resolved relative to CWD so that running
+    //   pkg rootfs build packages/redis/packages.toml
+    // from the repo root writes to <repo_root>/dist/redis-rootfs.ext4
+    // as declared in vm.toml, not to packages/dist/.
+    let image_path = out_override.unwrap_or_else(|| PathBuf::from(&rootfs.image_out));
 
     if let Some(parent) = image_path.parent() {
         if !parent.as_os_str().is_empty() {
