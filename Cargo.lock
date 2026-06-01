@@ -1076,7 +1076,7 @@ dependencies = [
 [[package]]
 name = "swe_fs_ext4_ext4"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.3#b9bbe8fe8ff5fc31a9f82bf46a1f96651a9983e6"
+source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.4#26c26331b6bcc2e853b5d1bc374cb0300941cab1"
 dependencies = [
  "swe_fs_ext4_spec",
  "thiserror 2.0.18",
@@ -1085,7 +1085,7 @@ dependencies = [
 [[package]]
 name = "swe_fs_ext4_spec"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.3#b9bbe8fe8ff5fc31a9f82bf46a1f96651a9983e6"
+source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.4#26c26331b6bcc2e853b5d1bc374cb0300941cab1"
 dependencies = [
  "thiserror 2.0.18",
 ]
@@ -1114,6 +1114,7 @@ dependencies = [
  "swe_justpkg_nix",
  "swe_justpkg_pkg",
  "swe_justpkg_resolve",
+ "swe_justpkg_rootfs",
  "swe_justpkg_vminit",
  "tempfile",
 ]
@@ -1176,6 +1177,20 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "xz2",
+]
+
+[[package]]
+name = "swe_justpkg_rootfs"
+version = "0.1.0"
+dependencies = [
+ "edge-domain",
+ "swe_fs_ext4_ext4",
+ "swe_justpkg_config",
+ "swe_justpkg_pkg",
+ "swe_justpkg_resolve",
+ "swe_justpkg_vminit",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]

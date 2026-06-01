@@ -1,4 +1,3 @@
-mod rootfs;
 mod scaffold;
 
 use clap::{Parser, Subcommand};
@@ -6,10 +5,11 @@ use edge_domain::{HandlerError, ServiceError};
 use std::path::PathBuf;
 
 use cas::FsCas;
-use ext4::{Ext4Error, Filesystem};
+use ext4::Filesystem;
 use justpkg_config::load as load_config;
 use justpkg_nix::{FlakeLock, NixFetcher};
 use justpkg_pkg::UreqClient;
+use justpkg_rootfs::{build_rootfs, verify_package};
 use justpkg_vminit::{parse_manifest, VminitInstaller};
 
 #[derive(Parser)]
@@ -269,7 +269,7 @@ fn run() -> Result<(), HandlerError> {
                     justpkg_config::SubstituterConfig { url: u.clone(), token }
                 })
                 .collect();
-            let image = rootfs::build_rootfs(&packages_toml, out, cli_subs, &config)?;
+            let image = build_rootfs(&packages_toml, out, cli_subs, &config)?;
             eprintln!("Run: vmic run --config {}", packages_toml.with_file_name("vm.toml").display());
             let _ = image;
         }
@@ -357,62 +357,3 @@ fn load_flake_lock(path: &PathBuf) -> Result<FlakeLock, HandlerError> {
         .map_err(|e| HandlerError::InvalidRequest(format!("parse {path:?}: {e}")))
 }
 
-pub(crate) const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
-const SHEBANG: [u8; 2] = [b'#', b'!'];
-
-pub(crate) fn verify_package<R: std::io::Read + std::io::Seek>(
-    fs: &mut Filesystem<R>,
-    name: &str,
-    store_path: &str,
-) -> Result<usize, HandlerError> {
-    fs.open_path(store_path).map_err(|e| {
-        HandlerError::NotFound(format!("store path {store_path} not found in image: {e}"))
-    })?;
-
-    let bin_path = format!("{store_path}/bin");
-    let bin_inode_num = match fs.open_path(&bin_path) {
-        Ok(n) => n,
-        Err(Ext4Error::NotFound { .. }) => return Ok(0),
-        Err(e) => return Err(HandlerError::ExecutionFailed(format!("open {bin_path}: {e}"))),
-    };
-    let bin_inode = fs
-        .read_inode(bin_inode_num)
-        .map_err(|e| HandlerError::ExecutionFailed(format!("read inode {bin_path}: {e}")))?;
-    let entries = fs
-        .read_dir(&bin_inode)
-        .map_err(|e| HandlerError::ExecutionFailed(format!("read dir {bin_path}: {e}")))?;
-
-    let mut count = 0usize;
-    for entry in &entries {
-        if entry.is_unused() {
-            continue;
-        }
-        let entry_name = std::str::from_utf8(&entry.name).unwrap_or("<non-utf8>");
-        if entry_name == "." || entry_name == ".." {
-            continue;
-        }
-        let file_path = format!("{bin_path}/{entry_name}");
-        let file_inode_num = fs
-            .open_path(&file_path)
-            .map_err(|e| HandlerError::ExecutionFailed(format!("open {file_path}: {e}")))?;
-        let file_inode = fs
-            .read_inode(file_inode_num)
-            .map_err(|e| HandlerError::ExecutionFailed(format!("read inode {file_path}: {e}")))?;
-        if !file_inode.is_regular() {
-            continue;
-        }
-        let data = fs
-            .read_file(&file_inode)
-            .map_err(|e| HandlerError::ExecutionFailed(format!("read file {file_path}: {e}")))?;
-        let is_elf = data.len() >= 4 && data[..4] == ELF_MAGIC;
-        let is_script = data.len() >= 2 && data[..2] == SHEBANG;
-        if !is_elf && !is_script {
-            return Err(HandlerError::ExecutionFailed(format!(
-                "{name}: {file_path} is not an ELF binary or shell script (first bytes: {:?})",
-                &data[..data.len().min(4)]
-            )));
-        }
-        count += 1;
-    }
-    Ok(count)
-}

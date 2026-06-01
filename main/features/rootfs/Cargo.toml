@@ -1,5 +1,5 @@
 [package]
-name        = "swe_justpkg_cli"
+name        = "swe_justpkg_rootfs"
 version     = "0.1.0"
 edition.workspace      = true
 license.workspace      = true
@@ -7,25 +7,17 @@ repository.workspace   = true
 homepage.workspace     = true
 authors.workspace      = true
 rust-version.workspace = true
-description = "justpkg — Nix NAR fetcher and extractor CLI"
-
-[[bin]]
-name = "pkg"
-path = "src/main.rs"
+description = "justpkg rootfs builder — TOML-driven ext4 image pipeline"
 
 [dependencies]
 edge-domain     = { workspace = true }
-justpkg-pkg     = { workspace = true }
-justpkg-nix     = { workspace = true }
+ext4            = { workspace = true }
 justpkg-config  = { workspace = true }
 justpkg-resolve = { workspace = true }
 justpkg-vminit  = { workspace = true }
-justpkg-rootfs  = { workspace = true }
-cas        = { workspace = true }
-ext4       = { workspace = true }
-clap       = { workspace = true }
-serde_json = { workspace = true }
-dirs-next  = "2"
+justpkg-pkg     = { workspace = true }
+tempfile        = { workspace = true }
 
 [dev-dependencies]
+toml     = { workspace = true }
 tempfile = { workspace = true }

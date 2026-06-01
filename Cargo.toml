@@ -4,6 +4,7 @@ members = [
     "main/features/config",
     "main/features/pkg",
     "main/features/nix",
+    "main/features/rootfs",
     "main/features/cli",
     "main/features/vminit",
     "main/features/resolve",
@@ -23,6 +24,7 @@ justpkg-config  = { path = "main/features/config",  package = "swe_justpkg_confi
 justpkg-pkg     = { path = "main/features/pkg",     package = "swe_justpkg_pkg"     }
 justpkg-nix     = { path = "main/features/nix",     package = "swe_justpkg_nix"     }
 justpkg-resolve = { path = "main/features/resolve", package = "swe_justpkg_resolve" }
+justpkg-rootfs  = { path = "main/features/rootfs",  package = "swe_justpkg_rootfs"  }
 justpkg-vminit  = { path = "main/features/vminit",  package = "swe_justpkg_vminit"  }
 
 # ── Edge framework
@@ -36,7 +38,7 @@ edge-configbuilder = { git = "ssh://git@github.com/sweengineeringlabs/edge.git",
 cas = { git = "ssh://git@github.com/sweengineeringlabs/justcas.git", tag = "v0.1.0", package = "swe_justcas_cas" }
 
 # ext4 image reader — used by `justpkg verify-image` to probe binaries.
-ext4 = { git = "ssh://git@github.com/sweengineeringlabs/filesystem.git", tag = "v0.2.3", package = "swe_fs_ext4_ext4" }
+ext4 = { git = "ssh://git@github.com/sweengineeringlabs/filesystem.git", tag = "v0.2.4", package = "swe_fs_ext4_ext4" }
 
 # ── External ──────────────────────────────────────────────────────────────
 thiserror  = "2"

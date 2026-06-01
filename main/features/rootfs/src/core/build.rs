@@ -2,8 +2,8 @@
 //!
 //! Replaces per-workload `build-rootfs.sh` scripts. Reads `packages.toml`
 //! (which must contain a `[rootfs]` section), installs the resolved packages
-//! into a tempdir, applies users/dirs/files from the TOML config, builds an
-//! ext4 image via the `ext4` library (no shell-out), and verifies it.
+//! into a tempdir, applies users/dirs/files/binaries from the TOML config,
+//! builds an ext4 image via the `ext4` library (no shell-out), and verifies it.
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -12,9 +12,11 @@ use std::path::{Path, PathBuf};
 use edge_domain::HandlerError;
 use ext4::{format as fs_format, Config, Ext4Error, Filesystem};
 use justpkg_config::{AppConfig, SubstituterConfig};
-use justpkg_vminit::{parse_manifest, VminitInstaller};
 use justpkg_pkg::UreqClient;
 use justpkg_resolve::{BinarySpec, FileSpec, UserSpec};
+use justpkg_vminit::{parse_manifest, VminitInstaller};
+
+use crate::core::verify::verify_image;
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
@@ -74,8 +76,6 @@ pub fn build_rootfs(
 
     // ── 4. Resolve image output path ─────────────────────────────────────────
     let image_path = out_override.unwrap_or_else(|| {
-        // Resolve image_out relative to the packages.toml directory's parent
-        // (the repo root for the standard packages/<name>/ layout).
         let base = packages_toml
             .parent()
             .and_then(|p| p.parent())
@@ -160,9 +160,6 @@ pub fn build_rootfs(
     // ── 11. Build ext4 image ─────────────────────────────────────────────────
     eprintln!("==> Building ext4 image → {}", image_path.display());
     let (size_blocks, inodes_per_group) = size_estimate(dest_path)?;
-    // Pad blocks by 50% — workloads with large JDK or module files (e.g.
-    // OpenSearch's openjdk/lib/modules at 300 MB+) exceed the 25% headroom
-    // that size_estimate provides. 50% is conservative but avoids a rebuild.
     let size_blocks = size_blocks.saturating_mul(3) / 2;
     eprintln!("==> Image params: --size-blocks {size_blocks} --inodes {inodes_per_group}");
 
@@ -240,7 +237,7 @@ pub fn build_rootfs(
 
 /// Reject paths that are not absolute, contain null bytes, or traverse with `..`.
 /// Prevents a malicious `packages.toml` from writing outside the image.
-pub(crate) fn validate_vfs_path(path: &str) -> Result<(), String> {
+pub fn validate_vfs_path(path: &str) -> Result<(), String> {
     if !path.starts_with('/') {
         return Err(format!("must be absolute (start with /), got {path:?}"));
     }
@@ -305,7 +302,7 @@ fn write_group(etc: &Path, users: &[UserSpec]) -> Result<(), HandlerError> {
 
 // ── File writing with store-path expansion ────────────────────────────────────
 
-fn write_rootfs_file(
+pub(crate) fn write_rootfs_file(
     dest_root: &Path,
     file: &FileSpec,
     store_paths: &HashMap<String, String>,
@@ -323,8 +320,6 @@ fn write_rootfs_file(
     std::fs::write(&host_path, content.as_bytes())
         .map_err(|e| HandlerError::ExecutionFailed(format!("write {}: {e}", file.path)))?;
 
-    // Apply mode on Unix hosts (on Windows the ext4 library detects ELF/#! and
-    // sets the mode at populate_from_host_tree time).
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -344,7 +339,7 @@ fn write_rootfs_file(
 /// `packages_dir` is the directory that contains `packages.toml`; relative
 /// `source` paths are resolved against it so callers can use bare filenames
 /// (e.g. `source = "libcrypto.so.3"`) for files sitting alongside the TOML.
-fn write_rootfs_binary(
+pub(crate) fn write_rootfs_binary(
     dest_root: &Path,
     packages_dir: &Path,
     binary: &BinarySpec,
@@ -405,12 +400,8 @@ fn write_rootfs_binary(
 /// Return `(size_blocks, inodes_per_group)` for a tree rooted at `host_root`.
 ///
 /// Uses 25% data headroom plus proper per-group ext4 metadata overhead.
-/// The old fixed 256-block overhead constant is far too small for multi-GB images:
-/// a ~2.8 GB image has ~22 block groups each needing ~213 overhead blocks → ~4700
-/// blocks of metadata that the constant was ignoring.
 fn size_estimate(host_root: &Path) -> Result<(u32, u32), HandlerError> {
     let block_size: u64 = 4096;
-    // ext4 default: 8 bits per byte * block_size bytes = blocks per group.
     let blocks_per_group: u64 = 8 * block_size;
 
     let (object_count, data_bytes) = walk_tree_stats(host_root)?;
@@ -418,15 +409,11 @@ fn size_estimate(host_root: &Path) -> Result<(u32, u32), HandlerError> {
     let inodes_needed = (object_count.saturating_mul(5) / 4).saturating_add(16);
     let inodes_per_group = inodes_needed.max(32);
 
-    // Data blocks with 25% headroom for runtime writes.
     let data_blocks = data_bytes.div_ceil(block_size).saturating_mul(5) / 4;
 
-    // Per-group overhead: block bitmap + inode bitmap + inode table.
-    // (Superblock and GDT copies are only in select groups; 2 extra covers group 0.)
     let inode_table_per_group = (inodes_per_group as u64 * 128).div_ceil(block_size);
     let overhead_per_group = 2 + inode_table_per_group;
 
-    // Estimate block groups needed; +1 for the partial final group.
     let num_groups = (data_blocks.div_ceil(blocks_per_group)).max(1);
     let total_overhead = overhead_per_group * num_groups + 2;
 
@@ -465,9 +452,6 @@ fn walk_tree_stats(root: &Path) -> Result<(u32, u64), HandlerError> {
 
 // ── Tree population ───────────────────────────────────────────────────────────
 
-/// Walk `host_root` and replicate every file, directory, and symlink into the
-/// open ext4 `fs`. Mirrors the logic in `justext4`'s `populate_from_host_tree`
-/// but uses `HandlerError` instead of `CliError` for consistent error typing.
 fn populate_from_host_tree<F: std::io::Read + std::io::Write + std::io::Seek>(
     fs: &mut Filesystem<F>,
     host_root: &Path,
@@ -529,7 +513,6 @@ fn populate_from_host_tree<F: std::io::Read + std::io::Write + std::io::Seek>(
                     HandlerError::ExecutionFailed(format!("symlink {vfs_child}: {e}"))
                 })?;
             }
-            // Device nodes and FIFOs are skipped; Nix store trees don't contain them.
         }
     }
     Ok(())
@@ -557,7 +540,6 @@ fn host_file_mode(_path: &Path, bytes: &[u8]) -> u16 {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Create a VFS directory and all its parents, ignoring AlreadyExists.
 fn mkdir_p<F: std::io::Read + std::io::Write + std::io::Seek>(
     fs: &mut Filesystem<F>,
     path: &str,
@@ -585,36 +567,7 @@ fn mkdir_p<F: std::io::Read + std::io::Write + std::io::Seek>(
     Ok(())
 }
 
-// ── Inline verify ─────────────────────────────────────────────────────────────
-
-fn verify_image(image_path: &Path, manifest: &justpkg_vminit::PackageManifest) -> Result<(), HandlerError> {
-    let f = std::fs::File::open(image_path).map_err(|e| {
-        HandlerError::ExecutionFailed(format!("open image {}: {e}", image_path.display()))
-    })?;
-    let mut fs = Filesystem::open(f).map_err(|e| {
-        HandlerError::ExecutionFailed(format!("open ext4 {}: {e}", image_path.display()))
-    })?;
-
-    let mut all_ok = true;
-    for (name, store_path) in &manifest.entries {
-        match crate::verify_package(&mut fs, name, store_path) {
-            Ok(count) => eprintln!("    ok  {name}: {count} ELF binaries"),
-            Err(e) => {
-                eprintln!("    FAIL {name}: {e}");
-                all_ok = false;
-            }
-        }
-    }
-    if !all_ok {
-        return Err(HandlerError::ExecutionFailed(
-            "one or more packages failed ELF verification".into(),
-        ));
-    }
-    eprintln!("    all {} package(s) verified", manifest.entries.len());
-    Ok(())
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── Unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -624,8 +577,6 @@ mod tests {
 
     #[test]
     fn test_packages_toml_with_rootfs_parses_correctly() {
-        // r##"..."## needed: the TOML content contains "# sequences (TOML string
-        // followed by a hash) which would prematurely terminate r#"..."#.
         let toml = r##"
 nixpkgs_channel = "nixos-24.11"
 system          = "x86_64-linux"
@@ -708,8 +659,6 @@ content = "#!/bin/sh\necho hi"
 
     #[test]
     fn test_expand_store_vars_replaces_known_package() {
-        // Store paths start with '/'. Template uses #!{bash_store}/bin/bash (no
-        // extra slash between #! and the placeholder) → #!/nix/store/.../bin/bash.
         let mut store_paths = HashMap::new();
         store_paths.insert("bash".to_string(), "/nix/store/aaaa-bash-5.2".to_string());
         let expanded = expand_store_vars("#!{bash_store}/bin/bash", &store_paths);
@@ -741,204 +690,6 @@ content = "#!/bin/sh\necho hi"
         );
         assert!(out.contains("/nix/store/A-bash/bin/bash"));
         assert!(out.contains("/nix/store/B-opensearch/bin/opensearch"));
-    }
-
-    // ── Path validation (security) ────────────────────────────────────────────
-
-    #[test]
-    fn test_validate_vfs_path_accepts_absolute_paths() {
-        assert!(validate_vfs_path("/bin/start").is_ok());
-        assert!(validate_vfs_path("/var/lib/opensearch").is_ok());
-        assert!(validate_vfs_path("/etc/passwd").is_ok());
-        assert!(validate_vfs_path("/").is_ok());
-    }
-
-    #[test]
-    fn test_validate_vfs_path_rejects_dotdot_traversal() {
-        let result = validate_vfs_path("/var/lib/../../../etc/shadow");
-        assert!(result.is_err(), "path traversal via '..' must be rejected");
-        assert!(result.unwrap_err().contains(".."));
-    }
-
-    #[test]
-    fn test_validate_vfs_path_rejects_dotdot_at_root() {
-        assert!(validate_vfs_path("/../etc/shadow").is_err());
-    }
-
-    #[test]
-    fn test_validate_vfs_path_rejects_dotdot_at_end() {
-        assert!(validate_vfs_path("/var/lib/..").is_err());
-    }
-
-    #[test]
-    fn test_validate_vfs_path_rejects_relative_path() {
-        let result = validate_vfs_path("bin/start");
-        assert!(result.is_err(), "relative paths must be rejected");
-        assert!(result.unwrap_err().contains("absolute"));
-    }
-
-    #[test]
-    fn test_validate_vfs_path_rejects_null_byte() {
-        let result = validate_vfs_path("/bin/start\x00/../etc/shadow");
-        assert!(result.is_err(), "null bytes must be rejected");
-        assert!(result.unwrap_err().contains("null"));
-    }
-
-    #[test]
-    fn test_validate_vfs_path_accepts_names_containing_dots_but_not_dotdot() {
-        // "..hidden" is a valid filename; only the bare ".." component is rejected.
-        assert!(validate_vfs_path("/var/lib/..hidden").is_ok());
-        assert!(validate_vfs_path("/etc/file..cfg").is_ok());
-    }
-
-    // ── End-to-end integration ────────────────────────────────────────────────
-    //
-    // These tests call build_rootfs() with a no-network fixture: an empty
-    // manifest.json ({"packages": {}}) so install_packages() short-circuits
-    // without making any network calls. They verify the produced ext4 image
-    // using the ext4::Filesystem API.
-    //
-    // Fixture layout (all created in a tempdir):
-    //   packages.toml   — rootfs spec with [[rootfs.binary]], [[rootfs.file]], [[rootfs.dir]]
-    //   manifest.json   — {"packages": {}}
-    //   myapp           — fake ELF binary (starts with \x7fELF)
-
-    #[test]
-    fn test_build_rootfs_binary_file_dir_entries_land_in_ext4_image() {
-        use std::io::Write as _;
-
-        let fixture = tempfile::tempdir().unwrap();
-        let pkg_dir = fixture.path();
-
-        std::fs::write(pkg_dir.join("packages.toml"), r##"
-nixpkgs_channel = "nixos-24.11"
-system          = "x86_64-linux"
-
-[[package]]
-attr = "bash"
-name = "bash"
-
-[rootfs]
-image_out = "dist/test.ext4"
-
-[[rootfs.dir]]
-path = "/var/data"
-
-[[rootfs.file]]
-path    = "/etc/greeting"
-content = "hello from rootfs test\n"
-mode    = 420
-
-[[rootfs.binary]]
-path   = "/usr/local/bin/myapp"
-source = "myapp"
-"##).unwrap();
-
-        std::fs::write(pkg_dir.join("manifest.json"), r#"{"packages": {}}"#).unwrap();
-
-        let mut f = std::fs::File::create(pkg_dir.join("myapp")).unwrap();
-        f.write_all(b"\x7fELFfake-content-for-test").unwrap();
-        drop(f);
-
-        let image_path = pkg_dir.join("test.ext4");
-        let result = build_rootfs(
-            &pkg_dir.join("packages.toml"),
-            Some(image_path.clone()),
-            vec![],
-            &justpkg_config::AppConfig::default(),
-        );
-        assert!(result.is_ok(), "build_rootfs must succeed: {:?}", result.err());
-        assert!(image_path.exists(), "ext4 image must be created at {}", image_path.display());
-
-        let mut fs = Filesystem::open(
-            std::fs::File::open(&image_path).unwrap(),
-        ).expect("must open ext4 image");
-
-        // [[rootfs.binary]]: injected file must have ELF magic
-        let binary = read_from_image(&mut fs, "/usr/local/bin/myapp");
-        assert!(
-            binary.starts_with(b"\x7fELF"),
-            "injected binary must start with ELF magic; got {:?}",
-            &binary[..binary.len().min(8)]
-        );
-        assert_eq!(&binary[4..], b"fake-content-for-test", "binary content must be preserved verbatim");
-
-        // [[rootfs.file]]: text content must land unchanged (no placeholders)
-        let greeting = read_from_image(&mut fs, "/etc/greeting");
-        assert_eq!(greeting, b"hello from rootfs test\n", "/etc/greeting content must match");
-
-        // [[rootfs.dir]]: directory must exist in the image
-        assert!(
-            fs.open_path("/var/data").is_ok(),
-            "/var/data must exist in image"
-        );
-    }
-
-    #[test]
-    fn test_build_rootfs_absent_manifest_returns_error() {
-        let fixture = tempfile::tempdir().unwrap();
-        std::fs::write(fixture.path().join("packages.toml"), r#"
-nixpkgs_channel = "nixos-24.11"
-[[package]]
-name = "bash"
-attr = "bash"
-[rootfs]
-image_out = "out.ext4"
-"#).unwrap();
-
-        let result = build_rootfs(
-            &fixture.path().join("packages.toml"),
-            Some(fixture.path().join("out.ext4")),
-            vec![],
-            &justpkg_config::AppConfig::default(),
-        );
-        assert!(result.is_err(), "must fail when manifest.json is absent");
-        assert!(
-            matches!(result.unwrap_err(), edge_domain::HandlerError::InvalidRequest(_)),
-            "error kind must be InvalidRequest"
-        );
-    }
-
-    #[test]
-    fn test_build_rootfs_missing_binary_source_returns_error() {
-        let fixture = tempfile::tempdir().unwrap();
-        std::fs::write(fixture.path().join("packages.toml"), r#"
-nixpkgs_channel = "nixos-24.11"
-[[package]]
-name = "bash"
-attr = "bash"
-[rootfs]
-image_out = "out.ext4"
-[[rootfs.binary]]
-path   = "/usr/local/bin/ghost"
-source = "ghost"
-"#).unwrap();
-        std::fs::write(fixture.path().join("manifest.json"), r#"{"packages": {}}"#).unwrap();
-        // ghost is deliberately not created — source file does not exist.
-
-        let result = build_rootfs(
-            &fixture.path().join("packages.toml"),
-            Some(fixture.path().join("out.ext4")),
-            vec![],
-            &justpkg_config::AppConfig::default(),
-        );
-        assert!(result.is_err(), "must fail when [[rootfs.binary]] source is absent");
-    }
-
-    // ── Test helpers ──────────────────────────────────────────────────────────
-
-    fn read_from_image<R: std::io::Read + std::io::Seek>(
-        fs: &mut Filesystem<R>,
-        vfs_path: &str,
-    ) -> Vec<u8> {
-        let inode_num = fs
-            .open_path(vfs_path)
-            .unwrap_or_else(|e| panic!("open_path {vfs_path:?}: {e}"));
-        let inode = fs
-            .read_inode(inode_num)
-            .unwrap_or_else(|e| panic!("read_inode {vfs_path:?}: {e}"));
-        fs.read_file(&inode)
-            .unwrap_or_else(|e| panic!("read_file {vfs_path:?}: {e}"))
     }
 
     // ── [[rootfs.binary]] parsing ─────────────────────────────────────────────
@@ -1031,7 +782,6 @@ source = "libcrypto.so.3"
         let src_dir = tempfile::tempdir().unwrap();
         let dest_dir = tempfile::tempdir().unwrap();
 
-        // Write a fake ELF-magic binary to the source dir.
         let src_file = src_dir.path().join("mybin");
         let mut f = std::fs::File::create(&src_file).unwrap();
         f.write_all(b"\x7fELFfakebinarycontents").unwrap();
