@@ -14,7 +14,7 @@ edge-domain = { workspace = true }
 cas         = { workspace = true }
 thiserror = { workspace = true }
 serde     = { workspace = true }
-ureq      = { workspace = true }
+reqwest   = { workspace = true }
 sha2      = { workspace = true }
 hex       = { workspace = true }
 tar       = { workspace = true }

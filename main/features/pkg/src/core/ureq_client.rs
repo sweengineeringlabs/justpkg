@@ -1,32 +1,28 @@
-use std::io::Read;
+use std::io::Write;
 use std::time::Duration;
+
+use reqwest::blocking::ClientBuilder;
 
 use crate::api::error::PkgError;
 use crate::api::traits::HttpClient;
 use crate::api::ureq_client::UreqClient;
 
-fn make_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(15))
-        .timeout_read(Duration::from_secs(60))
+fn make_client() -> reqwest::blocking::Client {
+    ClientBuilder::new()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(300))
+        .use_native_tls()
         .build()
+        .expect("reqwest client build")
 }
 
-fn map_ureq_error(url: &str, e: ureq::Error) -> PkgError {
-    match &e {
-        ureq::Error::Status(code, _) => PkgError::Http {
-            url: url.to_string(),
-            status: *code,
-        },
-        _ => PkgError::Http {
-            url: url.to_string(),
-            status: 0,
-        },
+fn map_error(url: &str, e: reqwest::Error) -> PkgError {
+    match e.status() {
+        Some(s) => PkgError::Http { url: url.to_string(), status: s.as_u16() },
+        None    => PkgError::Http { url: url.to_string(), status: 0 },
     }
 }
 
-/// Retry configuration for transient HTTP errors (status 0 = transport error).
-/// Retries up to 3 times with exponential backoff: 100ms, 200ms, 400ms.
 fn retry_with_backoff<F, T>(mut f: F, max_attempts: u32) -> Result<T, PkgError>
 where
     F: FnMut() -> Result<T, PkgError>,
@@ -34,7 +30,7 @@ where
     let mut attempt = 0;
     loop {
         match f() {
-            Ok(result) => return Ok(result),
+            Ok(v) => return Ok(v),
             Err(PkgError::Http { status: 0, .. }) if attempt < max_attempts => {
                 attempt += 1;
                 let delay_ms = 100 * (1 << (attempt - 1));
@@ -42,7 +38,7 @@ where
                     "[retry] transport error (attempt {}/{}), retrying in {}ms...",
                     attempt, max_attempts, delay_ms
                 );
-                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                std::thread::sleep(Duration::from_millis(delay_ms));
             }
             Err(e) => return Err(e),
         }
@@ -51,73 +47,71 @@ where
 
 impl HttpClient for UreqClient {
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, PkgError> {
-        let url = url.to_string();
-        retry_with_backoff(
-            || {
-                let resp = make_agent().get(&url)
-                    .set("Connection", "close")
-                    .call()
-                    .map_err(|e| map_ureq_error(&url, e))?;
-                let mut buf = Vec::new();
-                resp.into_reader().read_to_end(&mut buf).map_err(PkgError::Io)?;
-                Ok(buf)
-            },
-            3,
-        )
+        retry_with_backoff(|| {
+            let resp = make_client()
+                .get(url)
+                .send()
+                .map_err(|e| map_error(url, e))?;
+            let status = resp.status().as_u16();
+            if !resp.status().is_success() {
+                return Err(PkgError::Http { url: url.to_string(), status });
+            }
+            resp.bytes()
+                .map(|b| b.to_vec())
+                .map_err(|e| map_error(url, e))
+        }, 3)
     }
 
-    fn get_stream(&self, url: &str, dest: &mut dyn std::io::Write) -> Result<u64, PkgError> {
-        let url = url.to_string();
-        retry_with_backoff(
-            || {
-                let resp = make_agent().get(&url)
-                    .set("Connection", "close")
-                    .call()
-                    .map_err(|e| map_ureq_error(&url, e))?;
-                let n = std::io::copy(&mut resp.into_reader(), dest).map_err(PkgError::Io)?;
-                Ok(n)
-            },
-            3,
-        )
+    fn get_stream(&self, url: &str, dest: &mut dyn Write) -> Result<u64, PkgError> {
+        retry_with_backoff(|| {
+            let mut resp = make_client()
+                .get(url)
+                .send()
+                .map_err(|e| map_error(url, e))?;
+            let status = resp.status().as_u16();
+            if !resp.status().is_success() {
+                return Err(PkgError::Http { url: url.to_string(), status });
+            }
+            std::io::copy(&mut resp, dest).map_err(PkgError::Io)
+        }, 3)
     }
 
     fn get_bytes_auth(&self, url: &str, token: Option<&str>) -> Result<Vec<u8>, PkgError> {
-        let url = url.to_string();
         let token = token.map(|t| t.to_string());
-        retry_with_backoff(
-            || {
-                let mut req = make_agent().get(&url).set("Connection", "close");
-                if let Some(ref t) = token {
-                    req = req.set("Authorization", &format!("Bearer {t}"));
-                }
-                let resp = req.call().map_err(|e| map_ureq_error(&url, e))?;
-                let mut buf = Vec::new();
-                resp.into_reader().read_to_end(&mut buf).map_err(PkgError::Io)?;
-                Ok(buf)
-            },
-            3,
-        )
+        retry_with_backoff(|| {
+            let mut req = make_client().get(url);
+            if let Some(ref t) = token {
+                req = req.bearer_auth(t);
+            }
+            let resp = req.send().map_err(|e| map_error(url, e))?;
+            let status = resp.status().as_u16();
+            if !resp.status().is_success() {
+                return Err(PkgError::Http { url: url.to_string(), status });
+            }
+            resp.bytes()
+                .map(|b| b.to_vec())
+                .map_err(|e| map_error(url, e))
+        }, 3)
     }
 
     fn get_stream_auth(
         &self,
         url: &str,
         token: Option<&str>,
-        dest: &mut dyn std::io::Write,
+        dest: &mut dyn Write,
     ) -> Result<u64, PkgError> {
-        let url = url.to_string();
         let token = token.map(|t| t.to_string());
-        retry_with_backoff(
-            || {
-                let mut req = make_agent().get(&url).set("Connection", "close");
-                if let Some(ref t) = token {
-                    req = req.set("Authorization", &format!("Bearer {t}"));
-                }
-                let resp = req.call().map_err(|e| map_ureq_error(&url, e))?;
-                let n = std::io::copy(&mut resp.into_reader(), dest).map_err(PkgError::Io)?;
-                Ok(n)
-            },
-            3,
-        )
+        retry_with_backoff(|| {
+            let mut req = make_client().get(url);
+            if let Some(ref t) = token {
+                req = req.bearer_auth(t);
+            }
+            let mut resp = req.send().map_err(|e| map_error(url, e))?;
+            let status = resp.status().as_u16();
+            if !resp.status().is_success() {
+                return Err(PkgError::Http { url: url.to_string(), status });
+            }
+            std::io::copy(&mut resp, dest).map_err(PkgError::Io)
+        }, 3)
     }
 }
