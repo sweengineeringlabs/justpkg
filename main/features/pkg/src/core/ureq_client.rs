@@ -1,8 +1,16 @@
 use std::io::Read;
+use std::time::Duration;
 
 use crate::api::error::PkgError;
 use crate::api::traits::HttpClient;
 use crate::api::ureq_client::UreqClient;
+
+fn make_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(15))
+        .timeout_read(Duration::from_secs(60))
+        .build()
+}
 
 fn map_ureq_error(url: &str, e: ureq::Error) -> PkgError {
     match &e {
@@ -46,7 +54,7 @@ impl HttpClient for UreqClient {
         let url = url.to_string();
         retry_with_backoff(
             || {
-                let resp = ureq::get(&url)
+                let resp = make_agent().get(&url)
                     .set("Connection", "close")
                     .call()
                     .map_err(|e| map_ureq_error(&url, e))?;
@@ -62,7 +70,7 @@ impl HttpClient for UreqClient {
         let url = url.to_string();
         retry_with_backoff(
             || {
-                let resp = ureq::get(&url)
+                let resp = make_agent().get(&url)
                     .set("Connection", "close")
                     .call()
                     .map_err(|e| map_ureq_error(&url, e))?;
@@ -78,7 +86,7 @@ impl HttpClient for UreqClient {
         let token = token.map(|t| t.to_string());
         retry_with_backoff(
             || {
-                let mut req = ureq::get(&url).set("Connection", "close");
+                let mut req = make_agent().get(&url).set("Connection", "close");
                 if let Some(ref t) = token {
                     req = req.set("Authorization", &format!("Bearer {t}"));
                 }
@@ -101,7 +109,7 @@ impl HttpClient for UreqClient {
         let token = token.map(|t| t.to_string());
         retry_with_backoff(
             || {
-                let mut req = ureq::get(&url).set("Connection", "close");
+                let mut req = make_agent().get(&url).set("Connection", "close");
                 if let Some(ref t) = token {
                     req = req.set("Authorization", &format!("Bearer {t}"));
                 }
