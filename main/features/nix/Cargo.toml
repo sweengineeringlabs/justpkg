@@ -13,6 +13,7 @@ description = "justpkg Nix backend — flake.lock parser, narinfo fetcher, NAR e
 edge-domain = { workspace = true }
 justpkg-pkg = { workspace = true }
 cas          = { workspace = true }
+dirs-next    = { workspace = true }
 thiserror = { workspace = true }
 serde     = { workspace = true }
 serde_json = { workspace = true }

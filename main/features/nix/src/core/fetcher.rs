@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::{Cursor, Write};
 use std::path::Path;
 
-use cas::{Algorithm, Cas, Digest};
+use cas::{Algorithm, Cas, Digest, FsCas};
 use justpkg_pkg::HttpClient;
 
 use crate::api::error::NixFetchError;
@@ -29,12 +29,13 @@ impl<'a> NixFetcher<'a> {
     /// Fetch and extract all locked nodes from a `flake.lock` into `dest_dir`,
     /// recursively resolving transitive dependencies (the closure).
     pub fn build(&self, lock: &FlakeLock, dest_dir: &Path) -> Result<(), NixFetchError> {
+        let cas = open_local_cas();
         let mut visited = std::collections::HashSet::new();
         for (name, node) in lock.locked_nodes() {
             let sri = &node.locked.nar_hash;
             eprintln!("  fetch {name}");
             let store_hash = nix_hash::nar_hash_to_store_path_hash(sri)?;
-            self.build_with_closure(&store_hash, dest_dir, &mut visited)?;
+            self.build_with_closure(&store_hash, dest_dir, &mut visited, cas.as_ref())?;
         }
         Ok(())
     }
@@ -88,24 +89,7 @@ impl<'a> NixFetcher<'a> {
             eprintln!("  extract {name}");
             let narinfo = self.fetch_narinfo(sri)?;
 
-            // Derive the CAS lookup key from narinfo.file_hash (Nix base-32 or
-            // hex SHA-256 of the compressed file) — no need to re-download the
-            // blob just to reconstruct the digest.
-            let file_hash_bytes = if narinfo.file_hash.len() == 52 {
-                nix_hash::nix_base32_decode(&narinfo.file_hash).map_err(|e| {
-                    NixFetchError::NarExtract(format!("invalid FileHash base-32: {e}"))
-                })?
-            } else if narinfo.file_hash.len() == 64 {
-                hex::decode(&narinfo.file_hash)
-                    .map_err(|e| NixFetchError::NarExtract(format!("invalid FileHash hex: {e}")))?
-            } else {
-                return Err(NixFetchError::NarExtract(format!(
-                    "unexpected FileHash length {} for {name}: expected 52 (Nix base-32) or 64 (hex)",
-                    narinfo.file_hash.len()
-                )));
-            };
-
-            let digest = Digest::from_hash_output(Algorithm::Sha256, &file_hash_bytes);
+            let digest = file_hash_to_digest(&narinfo.file_hash)?;
             let stored = cas
                 .get(&digest)
                 .map_err(|e| NixFetchError::NarExtract(e.to_string()))?;
@@ -170,8 +154,9 @@ impl<'a> NixFetcher<'a> {
         let store_hash = basename.split_once('-').map(|(h, _)| h).ok_or_else(|| {
             NixFetchError::NarExtract(format!("store path missing hash separator: {store_path:?}"))
         })?;
+        let cas = open_local_cas();
         let mut visited = std::collections::HashSet::new();
-        self.build_with_closure(store_hash, dest_dir, &mut visited)
+        self.build_with_closure(store_hash, dest_dir, &mut visited, cas.as_ref())
     }
 
     fn build_with_closure(
@@ -179,6 +164,7 @@ impl<'a> NixFetcher<'a> {
         store_hash: &str,
         dest_dir: &Path,
         visited: &mut std::collections::HashSet<String>,
+        cas: Option<&FsCas>,
     ) -> Result<(), NixFetchError> {
         if !visited.insert(store_hash.to_string()) {
             return Ok(()); // already fetched — handles cycles and shared deps
@@ -192,42 +178,36 @@ impl<'a> NixFetcher<'a> {
             .strip_prefix("/nix/store/")
             .unwrap_or(&narinfo.store_path);
         let extract_path = dest_dir.join("nix").join("store").join(store_basename);
+        let label = store_basename
+            .split_once('-')
+            .map(|(_, name)| name)
+            .unwrap_or(store_basename);
 
         if !extract_path.exists() {
             let nar_url = format!("{}/{}", self.cache_base, narinfo.url);
-            let mut compressed = Vec::new();
 
-            // Print progress for large NARs (> 10 MiB). Small ones download fast
-            // enough that per-chunk updates would just be noise.
-            const PROGRESS_THRESHOLD: u64 = 10 * 1024 * 1024;
-            let label = store_basename
-                .split_once('-')
-                .map(|(_, name)| name)
-                .unwrap_or(store_basename);
-
-            if narinfo.file_size >= PROGRESS_THRESHOLD {
-                eprintln!(
-                    "[fetch] {} {:.0} MiB",
-                    label,
-                    narinfo.file_size as f64 / 1_048_576.0
-                );
-                let mut pw = ProgressWriter::new(
-                    &mut compressed,
-                    narinfo.file_size,
-                    label.to_string(),
-                );
-                self.http.get_stream_auth(&nar_url, self.token, &mut pw)?;
-                eprintln!("[done]  {}", label);
-            } else {
-                self.http
-                    .get_stream_auth(&nar_url, self.token, &mut compressed)?;
-            }
+            // ── CAS lookup: skip the download if we already have this NAR ────
+            let compressed = match cas.and_then(|c| {
+                file_hash_to_digest(&narinfo.file_hash).ok().and_then(|d| c.get(&d).ok())
+            }) {
+                Some(cached) => {
+                    eprintln!("[cache] {label}");
+                    cached
+                }
+                None => {
+                    // Cache miss: download, then store for next run.
+                    let bytes = self.fetch_compressed_nar(&nar_url, &narinfo, label)?;
+                    if let Some(c) = cas {
+                        let _ = c.put(&bytes); // best-effort — ignore put errors
+                    }
+                    bytes
+                }
+            };
 
             let uncompressed =
                 decompress(&narinfo.compression, &compressed).map_err(NixFetchError::NarExtract)?;
             verify_nar_hash(&uncompressed, &narinfo.nar_hash)?;
 
-            // Create the parent so extract_nar can write the store node.
             let parent = extract_path
                 .parent()
                 .ok_or_else(|| NixFetchError::NarExtract("store path has no parent".to_string()))?;
@@ -238,15 +218,33 @@ impl<'a> NixFetcher<'a> {
         }
 
         // Recursively fetch all transitive dependencies.
-        // References are bare basenames ("hash-name-ver"), not full /nix/store/ paths.
         for dep in &narinfo.references {
             let basename = dep.strip_prefix("/nix/store/").unwrap_or(dep);
             if let Some((dep_hash, _)) = basename.split_once('-') {
-                self.build_with_closure(dep_hash, dest_dir, visited)?;
+                self.build_with_closure(dep_hash, dest_dir, visited, cas)?;
             }
         }
 
         Ok(())
+    }
+
+    fn fetch_compressed_nar(
+        &self,
+        nar_url: &str,
+        narinfo: &NarInfo,
+        label: &str,
+    ) -> Result<Vec<u8>, NixFetchError> {
+        let mut compressed = Vec::new();
+        const PROGRESS_THRESHOLD: u64 = 10 * 1024 * 1024;
+        if narinfo.file_size >= PROGRESS_THRESHOLD {
+            eprintln!("[fetch] {} {:.0} MiB", label, narinfo.file_size as f64 / 1_048_576.0);
+            let mut pw = ProgressWriter::new(&mut compressed, narinfo.file_size, label.to_string());
+            self.http.get_stream_auth(nar_url, self.token, &mut pw)?;
+            eprintln!("[done]  {}", label);
+        } else {
+            self.http.get_stream_auth(nar_url, self.token, &mut compressed)?;
+        }
+        Ok(compressed)
     }
 
     fn fetch_narinfo(&self, sri: &str) -> Result<NarInfo, NixFetchError> {
@@ -263,6 +261,32 @@ impl<'a> NixFetcher<'a> {
             })?;
         NarInfo::parse(&store_hash, &narinfo_text)
     }
+}
+
+/// Open the shared local CAS at `~/.cache/justpkg/`. Returns `None` if the
+/// directory can't be located or created — callers treat this as a cache miss.
+fn open_local_cas() -> Option<FsCas> {
+    let path = dirs_next::cache_dir()?.join("justpkg");
+    FsCas::new(&path).ok()
+}
+
+/// Decode a narinfo `FileHash` field (Nix base-32 or hex SHA-256) into a CAS
+/// `Digest`. Used for both CAS lookup in `build_with_closure` and extraction
+/// in `extract_from_cas`.
+fn file_hash_to_digest(file_hash: &str) -> Result<Digest, NixFetchError> {
+    let bytes = if file_hash.len() == 52 {
+        nix_hash::nix_base32_decode(file_hash)
+            .map_err(|e| NixFetchError::NarExtract(format!("invalid FileHash base-32: {e}")))?
+    } else if file_hash.len() == 64 {
+        hex::decode(file_hash)
+            .map_err(|e| NixFetchError::NarExtract(format!("invalid FileHash hex: {e}")))?
+    } else {
+        return Err(NixFetchError::NarExtract(format!(
+            "unexpected FileHash length {}: expected 52 (Nix base-32) or 64 (hex)",
+            file_hash.len()
+        )));
+    };
+    Ok(Digest::from_hash_output(Algorithm::Sha256, &bytes))
 }
 
 fn verify_nar_hash(nar_bytes: &[u8], nar_hash_nix_base32: &str) -> Result<(), NixFetchError> {
