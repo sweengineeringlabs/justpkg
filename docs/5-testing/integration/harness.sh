@@ -292,6 +292,8 @@ echo "Network contract tests (cache.nixos.org, channels.nixos.org):"
 run_test "$SCRIPT_DIR/nix_channel_revision.hurl"
 run_test "$SCRIPT_DIR/nix_channel_store_paths.hurl"
 run_test "$SCRIPT_DIR/nix_narinfo_contract.hurl"
+run_test "$SCRIPT_DIR/nix_narinfo_cas_fields.hurl"
+run_test "$SCRIPT_DIR/nix_redis_narinfo.hurl"
 run_test "$SCRIPT_DIR/nix_nar_download.hurl"
 echo ""
 
