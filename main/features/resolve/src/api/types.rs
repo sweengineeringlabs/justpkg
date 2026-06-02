@@ -75,6 +75,14 @@ pub struct BuildProfile {
     /// Kerberos/GSSAPI authentication. Disable outside Active Directory environments.
     #[serde(default)]
     pub gss: Option<bool>,
+
+    /// Run the nixpkgs test suite during the build (`doCheck`). Default: true.
+    /// Set `check = false` when check-world fails in the Nix sandbox — the
+    /// sandbox restricts Unix sockets and TCP ports needed by auth/TAP suites.
+    /// The standard regression tests pass; only the extended check-world is
+    /// sandbox-incompatible. Applied via `overrideAttrs { doCheck = false; }`.
+    #[serde(default)]
+    pub check: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -183,30 +183,52 @@ fn generate_self_contained_flake(
     for pkg in packages {
         let attr = pkg.name.replace('-', "_");
         let overrides = nixpkgs_overrides(&pkg.name, profile);
-        let override_str = if overrides.is_empty() {
-            String::new()
-        } else {
-            let pairs: Vec<String> = overrides.iter()
-                .map(|(k, v)| format!("{k} = {};", if *v { "true" } else { "false" }))
-                .collect();
-            format!(".override {{ {} }}", pairs.join(" "))
+        // .override {} for feature flags; .overrideAttrs {} for build behaviour.
+        // Build the derivation expression with correct Nix operator precedence.
+        // `f { }.attr` in Nix parses as `f ({ }.attr)` — parentheses required
+        // when chaining .override {} and .overrideAttrs {}.
+        let needs_check_override = matches!(profile.check, Some(false));
+        let has_overrides = !overrides.is_empty();
+
+        let expr = match (has_overrides, needs_check_override) {
+            (false, false) => format!("pkgs.{}", pkg.name),
+            (true,  false) => {
+                let pairs: Vec<String> = overrides.iter()
+                    .map(|(k, v)| format!("{k} = {};", if *v { "true" } else { "false" }))
+                    .collect();
+                format!("pkgs.{}.override {{ {} }}", pkg.name, pairs.join(" "))
+            }
+            (false, true)  =>
+                format!("pkgs.{}.overrideAttrs (_: {{ doCheck = false; doInstallCheck = false; }})", pkg.name),
+            (true,  true)  => {
+                let pairs: Vec<String> = overrides.iter()
+                    .map(|(k, v)| format!("{k} = {};", if *v { "true" } else { "false" }))
+                    .collect();
+                // Parentheses ensure `.overrideAttrs` is called on the RESULT of
+                // `.override {}`, not parsed as `override ({ }.overrideAttrs)`.
+                format!("(pkgs.{}.override {{ {} }}).overrideAttrs (_: {{ doCheck = false; doInstallCheck = false; }})",
+                    pkg.name, pairs.join(" "))
+            }
         };
-        pkg_outputs.push_str(&format!(
-            "        {attr} = pkgs.{attr}{override_str};\n",
-        ));
+
+        // Output name uses underscores (valid Nix identifier); nixpkgs attr
+        // keeps hyphens (e.g. su-exec). Both are valid Nix identifiers.
+        pkg_outputs.push_str(&format!("        {attr} = {expr};\n"));
     }
 
     Ok(format!(
         r#"{{
   inputs.nixpkgs.url = "{nixpkgs_url}";
 
-  outputs = {{ self, nixpkgs }}: {{
-    packages.{system} = {{
-      let pkgs = nixpkgs.legacyPackages.{system}; in {{
+  outputs = {{ self, nixpkgs }}:
+    let
+      pkgs = nixpkgs.legacyPackages.{system};
+    in
+    {{
+      packages.{system} = {{
 {pkg_outputs}
-      }}
+      }};
     }};
-  }};
 }}"#,
         nixpkgs_url = nixpkgs_url,
         system = system,
