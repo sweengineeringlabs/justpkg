@@ -1420,6 +1420,7 @@ dependencies = [
  "swe_justpkg_rootfs",
  "swe_justpkg_vminit",
  "tempfile",
+ "toml",
 ]
 
 [[package]]

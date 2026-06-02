@@ -1,3 +1,4 @@
+mod flake;
 mod scaffold;
 
 use clap::{Parser, Subcommand};
@@ -83,6 +84,25 @@ enum Command {
         command: RootfsCommand,
     },
 
+    /// Build packages from a flake, push to Attic, write manifest.json.
+    ///
+    /// Requires Nix on PATH (WSL2 on Windows). For each [[package]] in
+    /// packages.toml, builds `packages.<system>.<attr>` from the flake.nix
+    /// in the same directory. Pushes each store path + closure to the
+    /// configured Attic substituter, then writes manifest.json.
+    ///
+    /// Use this instead of `pkg resolve` when you need custom variants
+    /// (e.g. postgres without ICU, musl-linked redis) that are not in the
+    /// standard binary cache.
+    ///
+    /// Examples:
+    ///   pkg flake build packages/postgres/packages.toml
+    ///   pkg flake build packages/redis/packages.toml --substituter http://127.0.0.1:8080/swe-private --token eyJ...
+    Flake {
+        #[command(subcommand)]
+        command: FlakeCommand,
+    },
+
     /// Scaffold a new workload package directory
     ///
     /// Creates packages/<name>/{packages.toml,build-rootfs.sh,vm.toml} in the
@@ -107,6 +127,24 @@ enum Command {
         /// Number of vCPUs
         #[arg(long, default_value_t = 1)]
         vcpus: u32,
+    },
+}
+
+#[derive(Subcommand)]
+enum FlakeCommand {
+    /// Build packages from the flake, push to Attic, write manifest.json
+    Build {
+        packages_toml: PathBuf,
+        /// Attic cache URL to push built packages to
+        /// (e.g. http://127.0.0.1:8080/swe-private)
+        #[arg(long = "substituter", short = 's')]
+        substituter: Option<String>,
+        /// Bearer token for the Attic cache
+        #[arg(long = "token", short = 't')]
+        token: Option<String>,
+        /// Override manifest output path (default: alongside packages.toml)
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -272,6 +310,10 @@ fn run() -> Result<(), HandlerError> {
             let image = build_rootfs(&packages_toml, out, cli_subs, &config)?;
             eprintln!("Run: vmic run --config {}", packages_toml.with_file_name("vm.toml").display());
             let _ = image;
+        }
+
+        Command::Flake { command: FlakeCommand::Build { packages_toml, substituter, token, out } } => {
+            flake::build(&packages_toml, substituter.as_deref(), token.as_deref(), out.as_deref())?;
         }
 
         Command::New { name, non_root, ports, memory, vcpus } => {

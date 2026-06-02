@@ -21,6 +21,60 @@ pub struct PackagesSpec {
     /// install → image → verify pipeline without a shell script.
     #[serde(default)]
     pub rootfs: Option<RootfsSpec>,
+
+    /// Optional build profile. TOML key is `[profile]`.
+    /// When present, `pkg flake build` applies these feature flags to every
+    /// `[[package]]` that supports them, overriding nixpkgs defaults.
+    /// Packages that don't have a given flag ignore it silently.
+    ///
+    /// ```toml
+    /// [profile]
+    /// jit     = false   # drop LLVM/JIT (postgres)
+    /// icu     = false   # drop ICU collation (postgres)
+    /// tls     = false   # drop TLS (redis — use NAT instead)
+    /// systemd = false   # drop systemd integration (no init system in VM)
+    /// ```
+    #[serde(default)]
+    pub profile: Option<BuildProfile>,
+}
+
+/// Workload-level build profile: feature flags applied to nixpkgs overrides.
+///
+/// Each flag is `Option<bool>` — absent means "use nixpkgs default",
+/// `false` explicitly disables the feature. `true` is accepted for
+/// documentation purposes but is always the nixpkgs default.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct BuildProfile {
+    /// JIT query compilation via LLVM. Only beneficial for complex analytical
+    /// queries (cost > jit_above_cost=100000). Safe to disable for OLTP.
+    #[serde(default)]
+    pub jit: Option<bool>,
+    /// ICU Unicode collation provider. Required only for non-C locale collation.
+    /// Safe to disable when using `--locale=C`.
+    #[serde(default)]
+    pub icu: Option<bool>,
+    /// TLS support. Disable when all clients connect via NAT/host-boundary TLS.
+    #[serde(default)]
+    pub tls: Option<bool>,
+    /// systemd socket activation and journal integration.
+    /// Disable when running without an init system (microVM workloads).
+    #[serde(default)]
+    pub systemd: Option<bool>,
+    /// PL/Perl procedural language. Disable when no Perl stored procedures are used.
+    #[serde(default)]
+    pub perl: Option<bool>,
+    /// PL/Python procedural language. Disable when no Python stored procedures are used.
+    #[serde(default)]
+    pub python: Option<bool>,
+    /// PL/Tcl procedural language. Disable when no Tcl stored procedures are used.
+    #[serde(default)]
+    pub tcl: Option<bool>,
+    /// PAM pluggable authentication. Disable when using password/env-based auth only.
+    #[serde(default)]
+    pub pam: Option<bool>,
+    /// Kerberos/GSSAPI authentication. Disable outside Active Directory environments.
+    #[serde(default)]
+    pub gss: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
