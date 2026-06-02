@@ -1379,7 +1379,7 @@ dependencies = [
 [[package]]
 name = "swe_fs_ext4_ext4"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.4#26c26331b6bcc2e853b5d1bc374cb0300941cab1"
+source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.5#638909c69b94ae39e613c5f38fba9ffd8cca8fac"
 dependencies = [
  "swe_fs_ext4_spec",
  "thiserror 2.0.18",
@@ -1388,7 +1388,7 @@ dependencies = [
 [[package]]
 name = "swe_fs_ext4_spec"
 version = "0.1.0"
-source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.4#26c26331b6bcc2e853b5d1bc374cb0300941cab1"
+source = "git+ssh://git@github.com/sweengineeringlabs/filesystem.git?tag=v0.2.5#638909c69b94ae39e613c5f38fba9ffd8cca8fac"
 dependencies = [
  "thiserror 2.0.18",
 ]
