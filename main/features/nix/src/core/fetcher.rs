@@ -270,28 +270,33 @@ fn open_local_cas() -> Option<FsCas> {
     FsCas::new(&path).ok()
 }
 
+/// Decode a SHA-256 hash from a narinfo field into raw bytes, accepting both
+/// encodings nix emits: 52-char Nix base-32 (cache.nixos.org) and 64-char hex
+/// (Attic). Both are valid `NarHash`/`FileHash` encodings — handling only
+/// base-32 breaks fetches from Attic, whose narinfo uses hex (issue: pkg pull
+/// from Attic failed with "invalid base-32 char 'e'").
+fn decode_sha256_hash(hash: &str, field: &str) -> Result<Vec<u8>, NixFetchError> {
+    match hash.len() {
+        52 => nix_hash::nix_base32_decode(hash)
+            .map_err(|e| NixFetchError::NarExtract(format!("invalid {field} base-32: {e}"))),
+        64 => hex::decode(hash)
+            .map_err(|e| NixFetchError::NarExtract(format!("invalid {field} hex: {e}"))),
+        n => Err(NixFetchError::NarExtract(format!(
+            "unexpected {field} length {n}: expected 52 (Nix base-32) or 64 (hex)"
+        ))),
+    }
+}
+
 /// Decode a narinfo `FileHash` field (Nix base-32 or hex SHA-256) into a CAS
 /// `Digest`. Used for both CAS lookup in `build_with_closure` and extraction
 /// in `extract_from_cas`.
 fn file_hash_to_digest(file_hash: &str) -> Result<Digest, NixFetchError> {
-    let bytes = if file_hash.len() == 52 {
-        nix_hash::nix_base32_decode(file_hash)
-            .map_err(|e| NixFetchError::NarExtract(format!("invalid FileHash base-32: {e}")))?
-    } else if file_hash.len() == 64 {
-        hex::decode(file_hash)
-            .map_err(|e| NixFetchError::NarExtract(format!("invalid FileHash hex: {e}")))?
-    } else {
-        return Err(NixFetchError::NarExtract(format!(
-            "unexpected FileHash length {}: expected 52 (Nix base-32) or 64 (hex)",
-            file_hash.len()
-        )));
-    };
+    let bytes = decode_sha256_hash(file_hash, "FileHash")?;
     Ok(Digest::from_hash_output(Algorithm::Sha256, &bytes))
 }
 
-fn verify_nar_hash(nar_bytes: &[u8], nar_hash_nix_base32: &str) -> Result<(), NixFetchError> {
-    let expected = nix_hash::nix_base32_decode(nar_hash_nix_base32)
-        .map_err(|e| NixFetchError::NarExtract(format!("invalid NarHash encoding: {e}")))?;
+fn verify_nar_hash(nar_bytes: &[u8], nar_hash: &str) -> Result<(), NixFetchError> {
+    let expected = decode_sha256_hash(nar_hash, "NarHash")?;
     let actual = {
         use sha2::Digest;
         sha2::Sha256::digest(nar_bytes).to_vec()
@@ -390,6 +395,32 @@ mod tests {
             result.is_ok(),
             "verify_nar_hash must return Ok when hash matches, got: {result:?}"
         );
+    }
+
+    #[test]
+    fn test_verify_nar_hash_accepts_hex_encoding() {
+        // Attic emits NarHash as 64-char hex (e.g. "256f1ead…"), not Nix base-32.
+        // Handling only base-32 broke pkg pulls from Attic with
+        // "invalid base-32 char 'e'". This guards the hex path.
+        let data = b"attic nar payload";
+        let hash_hex = {
+            use sha2::Digest;
+            hex::encode(sha2::Sha256::digest(data))
+        };
+        assert_eq!(hash_hex.len(), 64, "sha256 hex must be 64 chars");
+        let result = verify_nar_hash(data, &hash_hex);
+        assert!(
+            result.is_ok(),
+            "verify_nar_hash must accept 64-char hex NarHash (Attic), got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_decode_sha256_hash_rejects_bad_length() {
+        // A hash that is neither 52 (base-32) nor 64 (hex) chars is an error,
+        // not a silent misparse.
+        let result = decode_sha256_hash("deadbeef", "NarHash");
+        assert!(matches!(result, Err(NixFetchError::NarExtract(_))));
     }
 
     #[test]
