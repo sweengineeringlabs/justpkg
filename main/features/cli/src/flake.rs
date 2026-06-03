@@ -128,16 +128,42 @@ pub fn build(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| flake_dir.join("manifest.json"));
 
+    // Record the *actual* nixpkgs revision (from the workload's flake.lock) so
+    // the manifest is reproducible — the prior hardcoded "flake-build" lost the
+    // rev, making override-built paths non-auditable. Also record the applied
+    // [profile] so the manifest states WHAT produced these paths, not just the
+    // store paths themselves.
+    let nixpkgs_rev = read_nixpkgs_url(flake_dir)
+        .ok()
+        .and_then(|url| url.rsplit('/').next().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let mut meta = serde_json::json!({
+        "nixpkgs_rev":  nixpkgs_rev,
+        "channel":      spec.nixpkgs_channel,
+        "resolved_at":  std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs().to_string())
+                            .unwrap_or_else(|_| "0".to_string()),
+    });
+    if let Some(profile) = spec.profile.as_ref() {
+        // Record only the explicitly-set flags (the override variant), not the
+        // whole struct — keeps the manifest clean and unambiguous.
+        let mut pf = serde_json::Map::new();
+        for (name, val) in set_feature_flags(profile) {
+            pf.insert(name.to_string(), serde_json::Value::Bool(val));
+        }
+        if let Some(check) = profile.check {
+            pf.insert("check".to_string(), serde_json::Value::Bool(check));
+        }
+        if !pf.is_empty() {
+            meta["profile"] = serde_json::Value::Object(pf);
+        }
+    }
+
     let manifest = serde_json::json!({
         "packages": entries,
-        "meta": {
-            "nixpkgs_rev":  "flake-build",
-            "channel":      spec.nixpkgs_channel,
-            "resolved_at":  std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .map(|d| d.as_secs().to_string())
-                                .unwrap_or_else(|_| "0".to_string()),
-        }
+        "meta": meta,
     });
     std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap())
         .map_err(|e| HandlerError::ExecutionFailed(format!("write {}: {e}", manifest_path.display())))?;
