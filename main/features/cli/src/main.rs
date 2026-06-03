@@ -84,20 +84,27 @@ enum Command {
         command: RootfsCommand,
     },
 
-    /// Build packages from a flake, push to Attic, write manifest.json.
+    /// Build packages from a flake, optionally push to a nix binary cache,
+    /// write manifest.json.
     ///
     /// Requires Nix on PATH (WSL2 on Windows). For each [[package]] in
     /// packages.toml, builds `packages.<system>.<attr>` from the flake.nix
-    /// in the same directory. Pushes each store path + closure to the
-    /// configured Attic substituter, then writes manifest.json.
+    /// in the same directory. When `--substituter` is given, pushes each
+    /// store path + closure with `nix copy --to`, then writes manifest.json.
     ///
     /// Use this instead of `pkg resolve` when you need custom variants
-    /// (e.g. postgres without ICU, musl-linked redis) that are not in the
-    /// standard binary cache.
+    /// (e.g. postgres without ICU, slim redis) that are not in the standard
+    /// binary cache.
+    ///
+    /// NOTE: `--substituter` pushes via `nix copy`, which targets standard
+    /// nix caches (`file://`, `s3://`). It does NOT work with Attic — Attic
+    /// uses its own upload protocol. To publish to the swe-private Attic
+    /// cache, build here (no `--substituter`) then push the closure with the
+    /// `attic` client: `attic push swe-ci:swe-private <store-path>`.
     ///
     /// Examples:
     ///   pkg flake build packages/postgres/packages.toml
-    ///   pkg flake build packages/redis/packages.toml --substituter http://127.0.0.1:8080/swe-private --token eyJ...
+    ///   pkg flake build packages/redis/packages.toml --substituter file:///srv/nar-cache
     Flake {
         #[command(subcommand)]
         command: FlakeCommand,
@@ -132,14 +139,16 @@ enum Command {
 
 #[derive(Subcommand)]
 enum FlakeCommand {
-    /// Build packages from the flake, push to Attic, write manifest.json
+    /// Build packages from the flake, optionally push to a nix binary cache,
+    /// write manifest.json
     Build {
         packages_toml: PathBuf,
-        /// Attic cache URL to push built packages to
-        /// (e.g. http://127.0.0.1:8080/swe-private)
+        /// Nix binary cache URL to push built paths to, via `nix copy --to`
+        /// (e.g. file:///srv/nar-cache or s3://bucket). NOT Attic — use the
+        /// `attic` client (`attic push`) to publish to an Attic cache.
         #[arg(long = "substituter", short = 's')]
         substituter: Option<String>,
-        /// Bearer token for the Attic cache
+        /// Bearer token passed to `nix copy` for authenticated caches
         #[arg(long = "token", short = 't')]
         token: Option<String>,
         /// Override manifest output path (default: alongside packages.toml)
