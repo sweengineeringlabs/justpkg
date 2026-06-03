@@ -273,26 +273,31 @@ impl TempFlake {
 pub fn nixpkgs_overrides(package_name: &str, profile: &BuildProfile) -> BTreeMap<&'static str, bool> {
     let mut m = BTreeMap::new();
 
-    macro_rules! off {
+    // Emit an override for any explicitly-set flag, preserving its value, so the
+    // mapping is bidirectional and per-feature:
+    //   Some(false) → param = false (feature OFF)
+    //   Some(true)  → param = true  (feature ON, explicit)
+    //   None        → no override — nixpkgs default applies
+    macro_rules! set {
         ($map:expr, $key:expr, $val:expr) => {
-            if let Some(false) = $val { $map.insert($key, false); }
+            if let Some(v) = $val { $map.insert($key, v); }
         };
     }
 
     match package_name {
         n if n.starts_with("postgresql") => {
-            off!(m, "icuSupport",    profile.icu);
-            off!(m, "jitSupport",    profile.jit);
-            off!(m, "pythonSupport", profile.python);
-            off!(m, "perlSupport",   profile.perl);
-            off!(m, "tclSupport",    profile.tcl);
-            off!(m, "pamSupport",    profile.pam);
-            off!(m, "gssSupport",    profile.gss);
-            off!(m, "systemdSupport",profile.systemd);
+            set!(m, "icuSupport",    profile.icu);
+            set!(m, "jitSupport",    profile.jit);
+            set!(m, "pythonSupport", profile.python);
+            set!(m, "perlSupport",   profile.perl);
+            set!(m, "tclSupport",    profile.tcl);
+            set!(m, "pamSupport",    profile.pam);
+            set!(m, "gssSupport",    profile.gss);
+            set!(m, "systemdSupport",profile.systemd);
         }
         "redis" => {
-            off!(m, "tlsSupport", profile.tls);
-            off!(m, "withSystemd",profile.systemd);
+            set!(m, "tlsSupport", profile.tls);
+            set!(m, "withSystemd",profile.systemd);
         }
         _ => {} // unknown package — no overrides, use nixpkgs defaults
     }
@@ -440,11 +445,23 @@ mod tests {
 
     #[test]
     fn test_nixpkgs_overrides_none_values_not_emitted() {
-        // Only explicit false values should appear — absent (None) = use nixpkgs default.
+        // Absent (None) = use nixpkgs default — no override key at all.
+        // Explicitly-set flags (true or false) DO appear (see the opt-in test below).
         let p = BuildProfile { icu: None, jit: Some(false), ..Default::default() };
         let m = nixpkgs_overrides("postgresql_16", &p);
         assert!(!m.contains_key("icuSupport"),  "None should not produce an override");
         assert_eq!(m.get("jitSupport"), Some(&false));
+    }
+
+    #[test]
+    fn test_nixpkgs_overrides_true_emits_explicit_enable() {
+        // Per-feature opt-IN: Some(true) must emit `param = true`, not be dropped.
+        // Guards the bidirectional mapping — a regression to opt-out-only (the old
+        // `off!` macro that ignored Some(true)) would fail this.
+        let p = BuildProfile { tls: Some(true), systemd: Some(false), ..Default::default() };
+        let m = nixpkgs_overrides("redis", &p);
+        assert_eq!(m.get("tlsSupport"),  Some(&true),  "tls = true must enable tlsSupport");
+        assert_eq!(m.get("withSystemd"), Some(&false), "systemd = false must disable withSystemd");
     }
 
     #[test]
