@@ -37,6 +37,25 @@ pub fn build(
         )));
     }
 
+    // Fail loudly on a [profile] flag that no package in the manifest maps —
+    // it would otherwise be silently ignored and produce an unexpectedly large
+    // image (issue: silent profile no-op).
+    if let Some(profile) = spec.profile.as_ref() {
+        let names: Vec<&str> = spec.packages.iter().map(|p| p.name.as_str()).collect();
+        let unhonored = unhonored_profile_flags(&names, profile);
+        if !unhonored.is_empty() {
+            return Err(HandlerError::InvalidRequest(format!(
+                "[profile] flag(s) in {} are not mapped by any package in the manifest \
+                 and would be silently ignored: {}.\n\
+                 Remove them, or include a package whose nixpkgs derivation maps them. \
+                 Mapped today: redis → tls, systemd; postgresql* → icu, jit, python, perl, \
+                 tcl, pam, gss, systemd. `check` is universal.",
+                packages_toml.display(),
+                unhonored.join(", "),
+            )));
+        }
+    }
+
     let system = &spec.system;
     let mut entries: BTreeMap<String, String> = BTreeMap::new();
 
@@ -305,6 +324,48 @@ pub fn nixpkgs_overrides(package_name: &str, profile: &BuildProfile) -> BTreeMap
     m
 }
 
+/// Profile flags that are explicitly set but honored by **no** package in the
+/// manifest — pure no-ops that almost certainly indicate a config mistake.
+///
+/// The profile is global, applied to every package in the `packages.toml`, but
+/// each package only maps the features its nixpkgs derivation exposes. A flag
+/// honored by *some* packages (e.g. `tls` on redis but not a tzdata listed in
+/// the same manifest) is correct and not reported. A flag honored by *zero*
+/// packages does nothing and is reported so it never fails silently.
+///
+/// `nixpkgs_overrides` is used as the oracle (a one-flag probe per feature), so
+/// this stays in lockstep with the real mapping — there is no separate flag
+/// list to drift. `check` is universal (applied to every derivation via
+/// `overrideAttrs`) and is never reported.
+pub fn unhonored_profile_flags(
+    package_names: &[&str],
+    profile: &BuildProfile,
+) -> Vec<&'static str> {
+    // (flag name, user set it?, probe profile that sets ONLY this flag).
+    let probes: [(&'static str, bool, BuildProfile); 9] = [
+        ("jit",     profile.jit.is_some(),     BuildProfile { jit: Some(false), ..Default::default() }),
+        ("icu",     profile.icu.is_some(),     BuildProfile { icu: Some(false), ..Default::default() }),
+        ("tls",     profile.tls.is_some(),     BuildProfile { tls: Some(false), ..Default::default() }),
+        ("systemd", profile.systemd.is_some(), BuildProfile { systemd: Some(false), ..Default::default() }),
+        ("perl",    profile.perl.is_some(),    BuildProfile { perl: Some(false), ..Default::default() }),
+        ("python",  profile.python.is_some(),  BuildProfile { python: Some(false), ..Default::default() }),
+        ("tcl",     profile.tcl.is_some(),     BuildProfile { tcl: Some(false), ..Default::default() }),
+        ("pam",     profile.pam.is_some(),     BuildProfile { pam: Some(false), ..Default::default() }),
+        ("gss",     profile.gss.is_some(),     BuildProfile { gss: Some(false), ..Default::default() }),
+    ];
+
+    probes
+        .into_iter()
+        .filter(|(_, is_set, _)| *is_set)
+        .filter(|(_, _, probe)| {
+            !package_names
+                .iter()
+                .any(|name| !nixpkgs_overrides(name, probe).is_empty())
+        })
+        .map(|(name, _, _)| name)
+        .collect()
+}
+
 // ── Output path helpers ───────────────────────────────────────────────────────
 
 /// Pick the primary store path from `--print-out-paths` output.
@@ -462,6 +523,55 @@ mod tests {
         let m = nixpkgs_overrides("redis", &p);
         assert_eq!(m.get("tlsSupport"),  Some(&true),  "tls = true must enable tlsSupport");
         assert_eq!(m.get("withSystemd"), Some(&false), "systemd = false must disable withSystemd");
+    }
+
+    // ── unhonored_profile_flags ───────────────────────────────────────────────
+
+    #[test]
+    fn test_unhonored_flags_real_redis_manifest_is_clean() {
+        // The shipped redis manifest: tls + systemd are mapped by redis; check
+        // is universal. tzdata/bash map nothing but that is fine — honored by redis.
+        let p = BuildProfile {
+            tls: Some(false), systemd: Some(false), check: Some(false), ..Default::default()
+        };
+        let unhonored = unhonored_profile_flags(&["redis", "tzdata", "bash"], &p);
+        assert!(unhonored.is_empty(), "redis manifest must be clean, got {unhonored:?}");
+    }
+
+    #[test]
+    fn test_unhonored_flags_reports_flag_no_package_maps() {
+        // `icu` applies to postgres, not redis — in a redis-only manifest it is a
+        // silent no-op and must be reported.
+        let p = BuildProfile { icu: Some(false), tls: Some(false), ..Default::default() };
+        let unhonored = unhonored_profile_flags(&["redis", "bash"], &p);
+        assert_eq!(unhonored, vec!["icu"], "icu is unmapped here; tls is honored by redis");
+    }
+
+    #[test]
+    fn test_unhonored_flags_check_is_universal_never_reported() {
+        // `check` is applied via overrideAttrs to every derivation, so even on a
+        // manifest of only unmapped packages it is never flagged.
+        let p = BuildProfile { check: Some(false), ..Default::default() };
+        let unhonored = unhonored_profile_flags(&["bash", "tzdata"], &p);
+        assert!(unhonored.is_empty(), "check must never be reported, got {unhonored:?}");
+    }
+
+    #[test]
+    fn test_unhonored_flags_honored_by_some_is_ok() {
+        // tls honored by redis even though tzdata does not map it — not reported.
+        let p = BuildProfile { tls: Some(false), ..Default::default() };
+        let unhonored = unhonored_profile_flags(&["redis", "tzdata"], &p);
+        assert!(unhonored.is_empty(), "tls honored by redis ⇒ clean, got {unhonored:?}");
+    }
+
+    #[test]
+    fn test_unhonored_flags_all_unmapped_package_reports_every_set_flag() {
+        // A profile on a manifest of only-unmapped packages: every set flag is a
+        // no-op (except check). Guards against silently building a fat image.
+        let p = BuildProfile { tls: Some(false), systemd: Some(false), ..Default::default() };
+        let mut unhonored = unhonored_profile_flags(&["opensearch"], &p);
+        unhonored.sort_unstable();
+        assert_eq!(unhonored, vec!["systemd", "tls"]);
     }
 
     #[test]
