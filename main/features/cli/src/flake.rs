@@ -7,7 +7,7 @@
 //! When no profile is set, the existing `attr` field selects a named flake
 //! output (backward-compatible with `postgresql_16_slim` etc.).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -37,33 +37,36 @@ pub fn build(
         )));
     }
 
-    // Fail loudly on a [profile] flag that no package in the manifest maps —
-    // it would otherwise be silently ignored and produce an unexpectedly large
-    // image (issue: silent profile no-op).
-    if let Some(profile) = spec.profile.as_ref() {
-        let names: Vec<&str> = spec.packages.iter().map(|p| p.name.as_str()).collect();
-        let unhonored = unhonored_profile_flags(&names, profile);
+    let system = &spec.system;
+    let mut entries: BTreeMap<String, String> = BTreeMap::new();
+
+    // When a [profile] is present, discover each package's overridable args from
+    // nixpkgs (self-describing via `override.__functionArgs`), then:
+    //   1. fail loudly on a flag no package can honor (silent-no-op guard), and
+    //   2. generate a temp flake that applies the resolved overrides.
+    let temp_flake = if let Some(profile) = spec.profile.as_ref() {
+        let nixpkgs_url = read_nixpkgs_url(flake_dir)?;
+        let accepted = discover_all_override_args(flake_dir, &nixpkgs_url, system, &spec.packages)?;
+
+        let per_package: Vec<BTreeSet<String>> = accepted.values().cloned().collect();
+        let unhonored = unhonored_flags(&per_package, profile);
         if !unhonored.is_empty() {
             return Err(HandlerError::InvalidRequest(format!(
-                "[profile] flag(s) in {} are not mapped by any package in the manifest \
+                "[profile] flag(s) in {} are not supported by any package in the manifest \
                  and would be silently ignored: {}.\n\
-                 Remove them, or include a package whose nixpkgs derivation maps them. \
-                 Mapped today: redis → tls, systemd; postgresql* → icu, jit, python, perl, \
-                 tcl, pam, gss, systemd. `check` is universal.",
+                 Each package's overridable features are discovered from nixpkgs; none of \
+                 these packages (on this nixpkgs channel) expose a matching `override` arg. \
+                 Remove the flag(s), or switch to a channel/package that supports them. \
+                 `check` is universal.",
                 packages_toml.display(),
                 unhonored.join(", "),
             )));
         }
-    }
 
-    let system = &spec.system;
-    let mut entries: BTreeMap<String, String> = BTreeMap::new();
-
-    // When a [profile] is present, generate a temporary flake that applies
-    // the profile overrides directly — no named variant outputs needed.
-    let temp_flake = spec.profile.as_ref()
-        .map(|p| generate_profile_flake(flake_dir, &spec.packages, system, p))
-        .transpose()?;
+        Some(generate_profile_flake(flake_dir, &spec.packages, system, profile, &nixpkgs_url, &accepted)?)
+    } else {
+        None
+    };
 
     let effective_flake_dir: &Path = temp_flake
         .as_ref()
@@ -150,18 +153,20 @@ pub fn build(
 /// Generate a temporary flake that applies the profile overrides to each package.
 /// Returns a `TempFlake` handle that cleans up on drop.
 fn generate_profile_flake(
-    workload_flake_dir: &Path,
+    _workload_flake_dir: &Path,
     packages: &[justpkg_resolve::PackageEntry],
     system: &str,
     profile: &BuildProfile,
+    nixpkgs_url: &str,
+    accepted: &BTreeMap<String, BTreeSet<String>>,
 ) -> Result<TempFlake, HandlerError> {
     let dir = tempfile::tempdir()
         .map_err(|e| HandlerError::ExecutionFailed(format!("create temp flake dir: {e}")))?;
 
-    // Inherit the workload flake's inputs so nixpkgs is already pinned.
-    // Each package gets an output with overrides computed from the profile.
+    // Inherit the workload flake's pinned nixpkgs. Each package gets an output
+    // whose overrides are resolved against its discovered `override` args.
     let flake_content = generate_self_contained_flake(
-        workload_flake_dir, packages, system, profile,
+        packages, system, profile, nixpkgs_url, accepted,
     )?;
 
     let flake_path = dir.path().join("flake.nix");
@@ -175,33 +180,21 @@ fn generate_profile_flake(
     Ok(TempFlake(dir))
 }
 
-/// Generate a self-contained flake using the nixpkgs revision from the
-/// workload's flake.lock. Applies profile overrides to each package.
+/// Generate a self-contained flake pinned to `nixpkgs_url`, applying each
+/// package's profile overrides resolved against its discovered `override` args.
 fn generate_self_contained_flake(
-    workload_flake_dir: &Path,
     packages: &[justpkg_resolve::PackageEntry],
     system: &str,
     profile: &BuildProfile,
+    nixpkgs_url: &str,
+    accepted: &BTreeMap<String, BTreeSet<String>>,
 ) -> Result<String, HandlerError> {
-    // Parse the workload's flake.lock to find the nixpkgs-25_05 or nixpkgs revision.
-    let lock_path = workload_flake_dir.join("flake.lock");
-    let lock_text = std::fs::read_to_string(&lock_path)
-        .map_err(|e| HandlerError::InvalidRequest(format!(
-            "read flake.lock at {}: {e}", lock_path.display()
-        )))?;
-    let lock: serde_json::Value = serde_json::from_str(&lock_text)
-        .map_err(|e| HandlerError::InvalidRequest(format!("parse flake.lock: {e}")))?;
-
-    // Prefer nixpkgs-25_05 (has icuSupport, jitSupport params), fall back to nixpkgs.
-    let nixpkgs_url = find_nixpkgs_url(&lock, &["nixpkgs-25_05", "nixpkgs"])
-        .ok_or_else(|| HandlerError::InvalidRequest(
-            "flake.lock has no nixpkgs or nixpkgs-25_05 input".to_string()
-        ))?;
-
+    let empty = BTreeSet::new();
     let mut pkg_outputs = String::new();
     for pkg in packages {
         let attr = pkg.name.replace('-', "_");
-        let overrides = nixpkgs_overrides(&pkg.name, profile);
+        let pkg_accepted = accepted.get(&pkg.name).unwrap_or(&empty);
+        let overrides = resolve_overrides(pkg_accepted, profile);
         // .override {} for feature flags; .overrideAttrs {} for build behaviour.
         // Build the derivation expression with correct Nix operator precedence.
         // `f { }.attr` in Nix parses as `f ({ }.attr)` — parentheses required
@@ -282,88 +275,151 @@ impl TempFlake {
 
 // ── Profile → nixpkgs parameter mapping ──────────────────────────────────────
 
-/// Map `[profile]` flags to the correct nixpkgs `override {}` parameter names
-/// for the given package. Returns only parameters explicitly set to `false`.
-///
-/// The mapping is package-specific because nixpkgs uses different parameter
-/// names across derivations (e.g. `withSystemd` for redis, `systemdSupport`
-/// for postgres). Unknown packages return an empty map — overrides are silently
-/// skipped, preserving the nixpkgs defaults.
-pub fn nixpkgs_overrides(package_name: &str, profile: &BuildProfile) -> BTreeMap<&'static str, bool> {
+/// Canonical profile feature → candidate nixpkgs `override` arg names, in
+/// preference order. **Package-agnostic**: which candidate a given derivation
+/// actually accepts is discovered at build time from its
+/// `override.__functionArgs`, not hardcoded per package. nixpkgs uses different
+/// names across derivations *and* channels (e.g. `withSystemd` on redis vs
+/// `systemdSupport` on postgres; `icuSupport` exists on nixos-25.05 but not
+/// 24.11), so resolution must be data-driven to stay correct.
+pub fn feature_arg_aliases(feature: &str) -> &'static [&'static str] {
+    match feature {
+        "tls"     => &["tlsSupport", "opensslSupport", "sslSupport", "withTLS"],
+        "systemd" => &["withSystemd", "systemdSupport"],
+        "icu"     => &["icuSupport"],
+        "jit"     => &["jitSupport"],
+        "gss"     => &["gssSupport"],
+        "pam"     => &["pamSupport"],
+        "python"  => &["pythonSupport"],
+        "perl"    => &["perlSupport"],
+        "tcl"     => &["tclSupport"],
+        _         => &[],
+    }
+}
+
+/// The profile's explicitly-set feature flags as `(canonical name, value)`,
+/// excluding `check` (handled separately via `overrideAttrs`).
+fn set_feature_flags(profile: &BuildProfile) -> Vec<(&'static str, bool)> {
+    [
+        ("tls", profile.tls),       ("systemd", profile.systemd), ("icu", profile.icu),
+        ("jit", profile.jit),       ("gss", profile.gss),         ("pam", profile.pam),
+        ("python", profile.python), ("perl", profile.perl),       ("tcl", profile.tcl),
+    ]
+    .into_iter()
+    .filter_map(|(name, val)| val.map(|v| (name, v)))
+    .collect()
+}
+
+/// Resolve the profile's set flags to concrete nixpkgs `override` args for one
+/// package, given the arg names that package accepts (its
+/// `override.__functionArgs` keys, from [`discover_override_args`]). Each flag
+/// maps to the first alias present in `accepted`; flags with no matching alias
+/// are omitted — that derivation cannot toggle them (reported by
+/// [`unhonored_flags`]).
+pub fn resolve_overrides(
+    accepted: &BTreeSet<String>,
+    profile: &BuildProfile,
+) -> BTreeMap<&'static str, bool> {
     let mut m = BTreeMap::new();
-
-    // Emit an override for any explicitly-set flag, preserving its value, so the
-    // mapping is bidirectional and per-feature:
-    //   Some(false) → param = false (feature OFF)
-    //   Some(true)  → param = true  (feature ON, explicit)
-    //   None        → no override — nixpkgs default applies
-    macro_rules! set {
-        ($map:expr, $key:expr, $val:expr) => {
-            if let Some(v) = $val { $map.insert($key, v); }
-        };
-    }
-
-    match package_name {
-        n if n.starts_with("postgresql") => {
-            set!(m, "icuSupport",    profile.icu);
-            set!(m, "jitSupport",    profile.jit);
-            set!(m, "pythonSupport", profile.python);
-            set!(m, "perlSupport",   profile.perl);
-            set!(m, "tclSupport",    profile.tcl);
-            set!(m, "pamSupport",    profile.pam);
-            set!(m, "gssSupport",    profile.gss);
-            set!(m, "systemdSupport",profile.systemd);
+    for (feature, value) in set_feature_flags(profile) {
+        if let Some(arg) = feature_arg_aliases(feature)
+            .iter()
+            .find(|a| accepted.contains(**a))
+        {
+            m.insert(*arg, value);
         }
-        "redis" => {
-            set!(m, "tlsSupport", profile.tls);
-            set!(m, "withSystemd",profile.systemd);
-        }
-        _ => {} // unknown package — no overrides, use nixpkgs defaults
     }
-
     m
 }
 
-/// Profile flags that are explicitly set but honored by **no** package in the
-/// manifest — pure no-ops that almost certainly indicate a config mistake.
+/// Profile flags the user set explicitly but that **no** package in the manifest
+/// can honor — i.e. no alias appears in any package's accepted `override` args.
+/// These are pure no-ops; reporting them lets the build fail loudly instead of
+/// silently producing an unexpectedly large image.
 ///
-/// The profile is global, applied to every package in the `packages.toml`, but
-/// each package only maps the features its nixpkgs derivation exposes. A flag
-/// honored by *some* packages (e.g. `tls` on redis but not a tzdata listed in
-/// the same manifest) is correct and not reported. A flag honored by *zero*
-/// packages does nothing and is reported so it never fails silently.
-///
-/// `nixpkgs_overrides` is used as the oracle (a one-flag probe per feature), so
-/// this stays in lockstep with the real mapping — there is no separate flag
-/// list to drift. `check` is universal (applied to every derivation via
-/// `overrideAttrs`) and is never reported.
-pub fn unhonored_profile_flags(
-    package_names: &[&str],
+/// A flag accepted by *some* package (e.g. `tls` on redis but not a co-listed
+/// tzdata) is correct and not reported. `check` is universal (applied via
+/// `overrideAttrs`) and never appears here.
+pub fn unhonored_flags(
+    per_package_accepted: &[BTreeSet<String>],
     profile: &BuildProfile,
 ) -> Vec<&'static str> {
-    // (flag name, user set it?, probe profile that sets ONLY this flag).
-    let probes: [(&'static str, bool, BuildProfile); 9] = [
-        ("jit",     profile.jit.is_some(),     BuildProfile { jit: Some(false), ..Default::default() }),
-        ("icu",     profile.icu.is_some(),     BuildProfile { icu: Some(false), ..Default::default() }),
-        ("tls",     profile.tls.is_some(),     BuildProfile { tls: Some(false), ..Default::default() }),
-        ("systemd", profile.systemd.is_some(), BuildProfile { systemd: Some(false), ..Default::default() }),
-        ("perl",    profile.perl.is_some(),    BuildProfile { perl: Some(false), ..Default::default() }),
-        ("python",  profile.python.is_some(),  BuildProfile { python: Some(false), ..Default::default() }),
-        ("tcl",     profile.tcl.is_some(),     BuildProfile { tcl: Some(false), ..Default::default() }),
-        ("pam",     profile.pam.is_some(),     BuildProfile { pam: Some(false), ..Default::default() }),
-        ("gss",     profile.gss.is_some(),     BuildProfile { gss: Some(false), ..Default::default() }),
-    ];
-
-    probes
+    set_feature_flags(profile)
         .into_iter()
-        .filter(|(_, is_set, _)| *is_set)
-        .filter(|(_, _, probe)| {
-            !package_names
+        .filter(|(feature, _)| {
+            let aliases = feature_arg_aliases(feature);
+            !per_package_accepted
                 .iter()
-                .any(|name| !nixpkgs_overrides(name, probe).is_empty())
+                .any(|acc| aliases.iter().any(|a| acc.contains(*a)))
         })
-        .map(|(name, _, _)| name)
+        .map(|(feature, _)| feature)
         .collect()
+}
+
+/// Read the pinned nixpkgs flake URL (`github:owner/repo/rev`) from the
+/// workload's `flake.lock`. Prefers `nixpkgs-25_05`, falls back to `nixpkgs`.
+fn read_nixpkgs_url(flake_dir: &Path) -> Result<String, HandlerError> {
+    let lock_path = flake_dir.join("flake.lock");
+    let lock_text = std::fs::read_to_string(&lock_path).map_err(|e| {
+        HandlerError::InvalidRequest(format!("read flake.lock at {}: {e}", lock_path.display()))
+    })?;
+    let lock: serde_json::Value = serde_json::from_str(&lock_text)
+        .map_err(|e| HandlerError::InvalidRequest(format!("parse flake.lock: {e}")))?;
+    find_nixpkgs_url(&lock, &["nixpkgs-25_05", "nixpkgs"]).ok_or_else(|| {
+        HandlerError::InvalidRequest("flake.lock has no nixpkgs or nixpkgs-25_05 input".to_string())
+    })
+}
+
+/// Discover the `override` args a package accepts by evaluating its
+/// `override.__functionArgs` against the pinned nixpkgs. `nix eval` is a pure
+/// evaluation (no realisation), so this is cheap. The guard returns `[]` for
+/// derivations without an overridable interface rather than erroring.
+fn discover_override_args(
+    flake_dir: &Path,
+    nixpkgs_url: &str,
+    system: &str,
+    package_name: &str,
+) -> Result<BTreeSet<String>, HandlerError> {
+    let expr = format!(
+        "let p = (builtins.getFlake \"{nixpkgs_url}\").legacyPackages.{system}.{package_name}; \
+         in if (p ? override) && (p.override ? __functionArgs) \
+            then builtins.attrNames p.override.__functionArgs else []"
+    );
+    let out = run_nix(flake_dir, &["eval", "--impure", "--json", "--expr", &expr]).map_err(|e| {
+        HandlerError::ExecutionFailed(format!("nix eval __functionArgs for {package_name}: {e}"))
+    })?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(HandlerError::ExecutionFailed(format!(
+            "discover override args for '{package_name}' failed:\n{stderr}"
+        )));
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let names: Vec<String> = serde_json::from_str(stdout.trim()).map_err(|e| {
+        HandlerError::ExecutionFailed(format!(
+            "parse __functionArgs json for '{package_name}': {e} (got: {})",
+            stdout.trim()
+        ))
+    })?;
+    Ok(names.into_iter().collect())
+}
+
+/// Discover override args for every distinct package, returning
+/// `name → accepted-args`. One pure `nix eval` per package (deduplicated).
+fn discover_all_override_args(
+    flake_dir: &Path,
+    nixpkgs_url: &str,
+    system: &str,
+    packages: &[justpkg_resolve::PackageEntry],
+) -> Result<BTreeMap<String, BTreeSet<String>>, HandlerError> {
+    let mut map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for pkg in packages {
+        if !map.contains_key(&pkg.name) {
+            let args = discover_override_args(flake_dir, nixpkgs_url, system, &pkg.name)?;
+            map.insert(pkg.name.clone(), args);
+        }
+    }
+    Ok(map)
 }
 
 // ── Output path helpers ───────────────────────────────────────────────────────
@@ -458,130 +514,118 @@ mod tests {
     use super::*;
     use justpkg_resolve::BuildProfile;
 
-    // ── nixpkgs_overrides mapping ─────────────────────────────────────────────
+    // ── resolve_overrides (eval-driven) ───────────────────────────────────────
 
-    #[test]
-    fn test_nixpkgs_overrides_postgres_icu_jit_disabled() {
-        let p = BuildProfile { icu: Some(false), jit: Some(false), ..Default::default() };
-        let m = nixpkgs_overrides("postgresql_16", &p);
-        assert_eq!(m.get("icuSupport"), Some(&false));
-        assert_eq!(m.get("jitSupport"), Some(&false));
-        assert!(!m.contains_key("pythonSupport"), "python not in profile");
+    /// Build an accepted-args set from a slice of nixpkgs `override` arg names.
+    fn args(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn test_nixpkgs_overrides_postgres_full_profile() {
-        let p = BuildProfile {
-            icu: Some(false), jit: Some(false), python: Some(false),
-            perl: Some(false), tcl: Some(false), pam: Some(false),
-            gss: Some(false), systemd: Some(false), ..Default::default()
-        };
-        let m = nixpkgs_overrides("postgresql_16", &p);
-        assert_eq!(m.len(), 8);
-        assert_eq!(m.get("icuSupport"),    Some(&false));
-        assert_eq!(m.get("jitSupport"),    Some(&false));
-        assert_eq!(m.get("pythonSupport"), Some(&false));
-        assert_eq!(m.get("perlSupport"),   Some(&false));
-        assert_eq!(m.get("tclSupport"),    Some(&false));
-        assert_eq!(m.get("pamSupport"),    Some(&false));
-        assert_eq!(m.get("gssSupport"),    Some(&false));
-        assert_eq!(m.get("systemdSupport"),Some(&false));
-    }
-
-    #[test]
-    fn test_nixpkgs_overrides_redis_tls_systemd() {
+    fn test_resolve_overrides_redis_args() {
+        // redis exposes tlsSupport + withSystemd among its override args.
+        let accepted = args(&["tlsSupport", "withSystemd", "jemalloc", "lua", "openssl"]);
         let p = BuildProfile { tls: Some(false), systemd: Some(false), ..Default::default() };
-        let m = nixpkgs_overrides("redis", &p);
+        let m = resolve_overrides(&accepted, &p);
         assert_eq!(m.get("tlsSupport"),  Some(&false));
         assert_eq!(m.get("withSystemd"), Some(&false));
-        assert!(!m.contains_key("icuSupport"), "icu not applicable to redis");
+        assert_eq!(m.len(), 2);
     }
 
     #[test]
-    fn test_nixpkgs_overrides_unknown_package_returns_empty() {
+    fn test_resolve_overrides_systemd_resolves_to_accepted_alias() {
+        // postgres exposes systemdSupport (not withSystemd); the systemd flag must
+        // resolve to whichever spelling the derivation actually accepts.
+        let accepted = args(&["jitSupport", "systemdSupport", "gssSupport", "pythonSupport"]);
+        let p = BuildProfile { systemd: Some(false), jit: Some(false), ..Default::default() };
+        let m = resolve_overrides(&accepted, &p);
+        assert_eq!(m.get("systemdSupport"), Some(&false), "systemd → systemdSupport here");
+        assert_eq!(m.get("jitSupport"),     Some(&false));
+        assert!(!m.contains_key("withSystemd"), "must not emit an arg the pkg lacks");
+    }
+
+    #[test]
+    fn test_resolve_overrides_unsupported_flag_is_omitted_not_emitted_broken() {
+        // nixos-24.11 postgres has NO icuSupport (only the bare `icu` dep). icu
+        // must be omitted, NOT emitted as a `icuSupport = false` that would error
+        // the nix build — this is the exact bug the hardcoded mapping produced.
+        let accepted = args(&["jitSupport", "icu", "linux-pam", "openssl"]);
         let p = BuildProfile { icu: Some(false), jit: Some(false), ..Default::default() };
-        let m = nixpkgs_overrides("opensearch", &p);
-        assert!(m.is_empty(), "unknown package must produce no overrides");
-    }
-
-    #[test]
-    fn test_nixpkgs_overrides_none_values_not_emitted() {
-        // Absent (None) = use nixpkgs default — no override key at all.
-        // Explicitly-set flags (true or false) DO appear (see the opt-in test below).
-        let p = BuildProfile { icu: None, jit: Some(false), ..Default::default() };
-        let m = nixpkgs_overrides("postgresql_16", &p);
-        assert!(!m.contains_key("icuSupport"),  "None should not produce an override");
+        let m = resolve_overrides(&accepted, &p);
+        assert!(!m.contains_key("icuSupport"), "icu unsupported on this channel → omitted");
         assert_eq!(m.get("jitSupport"), Some(&false));
+        assert_eq!(m.len(), 1);
     }
 
     #[test]
-    fn test_nixpkgs_overrides_true_emits_explicit_enable() {
-        // Per-feature opt-IN: Some(true) must emit `param = true`, not be dropped.
-        // Guards the bidirectional mapping — a regression to opt-out-only (the old
-        // `off!` macro that ignored Some(true)) would fail this.
+    fn test_resolve_overrides_true_emits_explicit_enable() {
+        // Per-feature opt-IN: Some(true) emits `arg = true`, not dropped.
+        let accepted = args(&["tlsSupport", "withSystemd"]);
         let p = BuildProfile { tls: Some(true), systemd: Some(false), ..Default::default() };
-        let m = nixpkgs_overrides("redis", &p);
-        assert_eq!(m.get("tlsSupport"),  Some(&true),  "tls = true must enable tlsSupport");
-        assert_eq!(m.get("withSystemd"), Some(&false), "systemd = false must disable withSystemd");
+        let m = resolve_overrides(&accepted, &p);
+        assert_eq!(m.get("tlsSupport"),  Some(&true));
+        assert_eq!(m.get("withSystemd"), Some(&false));
     }
 
-    // ── unhonored_profile_flags ───────────────────────────────────────────────
+    #[test]
+    fn test_resolve_overrides_none_flags_not_emitted() {
+        // Absent (None) flag → no override even if the arg is accepted.
+        let accepted = args(&["tlsSupport", "withSystemd"]);
+        let p = BuildProfile { tls: Some(false), ..Default::default() }; // systemd: None
+        let m = resolve_overrides(&accepted, &p);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m.get("tlsSupport"), Some(&false));
+    }
 
     #[test]
-    fn test_unhonored_flags_real_redis_manifest_is_clean() {
-        // The shipped redis manifest: tls + systemd are mapped by redis; check
-        // is universal. tzdata/bash map nothing but that is fine — honored by redis.
+    fn test_feature_arg_aliases_systemd_lists_both_spellings() {
+        // Guards the canonical alias table — systemd must cover both nixpkgs names.
+        let a = feature_arg_aliases("systemd");
+        assert!(a.contains(&"withSystemd") && a.contains(&"systemdSupport"));
+        assert!(feature_arg_aliases("does-not-exist").is_empty());
+    }
+
+    // ── unhonored_flags ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_unhonored_flags_clean_when_each_flag_accepted_by_some_package() {
+        // redis accepts tls+systemd; tzdata/bash accept neither — fine, honored
+        // by redis. check is universal and never reported.
+        let per_pkg = vec![
+            args(&["tlsSupport", "withSystemd"]), // redis
+            args(&["coreutils"]),                 // tzdata-ish
+            args(&["pkgsStatic"]),                // bash-ish
+        ];
         let p = BuildProfile {
             tls: Some(false), systemd: Some(false), check: Some(false), ..Default::default()
         };
-        let unhonored = unhonored_profile_flags(&["redis", "tzdata", "bash"], &p);
-        assert!(unhonored.is_empty(), "redis manifest must be clean, got {unhonored:?}");
+        assert!(unhonored_flags(&per_pkg, &p).is_empty());
     }
 
     #[test]
-    fn test_unhonored_flags_reports_flag_no_package_maps() {
-        // `icu` applies to postgres, not redis — in a redis-only manifest it is a
-        // silent no-op and must be reported.
+    fn test_unhonored_flags_reports_flag_no_package_accepts() {
+        // icu accepted by no package here; tls accepted by redis ⇒ only icu flagged.
+        let per_pkg = vec![args(&["tlsSupport", "withSystemd"]), args(&["pkgsStatic"])];
         let p = BuildProfile { icu: Some(false), tls: Some(false), ..Default::default() };
-        let unhonored = unhonored_profile_flags(&["redis", "bash"], &p);
-        assert_eq!(unhonored, vec!["icu"], "icu is unmapped here; tls is honored by redis");
+        assert_eq!(unhonored_flags(&per_pkg, &p), vec!["icu"]);
     }
 
     #[test]
-    fn test_unhonored_flags_check_is_universal_never_reported() {
-        // `check` is applied via overrideAttrs to every derivation, so even on a
-        // manifest of only unmapped packages it is never flagged.
+    fn test_unhonored_flags_check_never_reported() {
+        let per_pkg = vec![args(&["coreutils"]), args(&["pkgsStatic"])];
         let p = BuildProfile { check: Some(false), ..Default::default() };
-        let unhonored = unhonored_profile_flags(&["bash", "tzdata"], &p);
-        assert!(unhonored.is_empty(), "check must never be reported, got {unhonored:?}");
+        assert!(unhonored_flags(&per_pkg, &p).is_empty());
     }
 
     #[test]
-    fn test_unhonored_flags_honored_by_some_is_ok() {
-        // tls honored by redis even though tzdata does not map it — not reported.
-        let p = BuildProfile { tls: Some(false), ..Default::default() };
-        let unhonored = unhonored_profile_flags(&["redis", "tzdata"], &p);
-        assert!(unhonored.is_empty(), "tls honored by redis ⇒ clean, got {unhonored:?}");
-    }
-
-    #[test]
-    fn test_unhonored_flags_all_unmapped_package_reports_every_set_flag() {
-        // A profile on a manifest of only-unmapped packages: every set flag is a
-        // no-op (except check). Guards against silently building a fat image.
+    fn test_unhonored_flags_all_unmapped_reports_every_set_flag() {
+        // opensearch-ish: only package deps, no feature toggles ⇒ every set flag
+        // (except check) is a no-op and must be reported.
+        let per_pkg = vec![args(&["coreutils", "jre_headless", "stdenv"])];
         let p = BuildProfile { tls: Some(false), systemd: Some(false), ..Default::default() };
-        let mut unhonored = unhonored_profile_flags(&["opensearch"], &p);
-        unhonored.sort_unstable();
-        assert_eq!(unhonored, vec!["systemd", "tls"]);
-    }
-
-    #[test]
-    fn test_nixpkgs_overrides_matches_all_postgresql_variants() {
-        // postgresql_17, postgresql_15 etc. should all match the postgres branch.
-        for name in &["postgresql_15", "postgresql_16", "postgresql_17"] {
-            let p = BuildProfile { icu: Some(false), ..Default::default() };
-            let m = nixpkgs_overrides(name, &p);
-            assert!(m.contains_key("icuSupport"), "{name} must map icu → icuSupport");
-        }
+        let mut u = unhonored_flags(&per_pkg, &p);
+        u.sort_unstable();
+        assert_eq!(u, vec!["systemd", "tls"]);
     }
 
     // ── pick_primary_output ───────────────────────────────────────────────────
